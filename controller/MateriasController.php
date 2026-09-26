@@ -47,7 +47,7 @@ final class MateriasController
     public function update(int $id, array $input): array
     {
         $data = $this->normalize($input);
-        $errors = $this->validate($data);
+        $errors = $this->validate($data, $id);
 
         if ($errors) {
             return [$data, $errors];
@@ -78,20 +78,23 @@ final class MateriasController
         $careerId = filter_var($input['id_carrera'] ?? null, FILTER_VALIDATE_INT);
 
         return [
-            'nombre_materia' => trim((string) ($input['nombre_materia'] ?? '')),
+            'nombre_materia' => preg_replace('/\s+/u', ' ', trim((string) ($input['nombre_materia'] ?? ''))) ?? trim((string) ($input['nombre_materia'] ?? '')),
             'id_carrera' => $careerId !== false ? $careerId : null,
         ];
     }
 
-    private function validate(array $data): array
+    private function validate(array $data, ?int $excludeId = null): array
     {
         $errors = [];
-        $error = validation_text($data['nombre_materia'], 'nombre de la materia', 150);
+        $error = validation_name($data['nombre_materia'], 'nombre de la materia', 150);
         if ($error !== null) {
             $errors[] = $error;
         }
         if ($data['id_carrera'] !== null && !$this->model->careerExists((int) $data['id_carrera'])) {
             $errors[] = 'La carrera seleccionada no existe.';
+        }
+        if ($data['nombre_materia'] !== '' && $this->model->nameExists($data['nombre_materia'], $excludeId)) {
+            $errors[] = 'Ya existe una materia con ese nombre.';
         }
 
         return $errors;

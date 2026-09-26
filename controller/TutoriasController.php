@@ -21,6 +21,78 @@ final class TutoriasController
         return $this->model->filterOptions($role, $userId);
     }
 
+    public function sessionOptions(int $userId): array
+    {
+        return $this->model->sessionOptionsForTutor($userId);
+    }
+
+    public function schedule(array $input, int $userId): array
+    {
+        $data = [
+            'id_inscripcion' => filter_var($input['id_inscripcion'] ?? null, FILTER_VALIDATE_INT) ?: 0,
+            'fecha' => trim((string) ($input['fecha'] ?? '')),
+            'modalidad' => trim((string) ($input['modalidad'] ?? 'presencial')),
+            'lugar_o_enlace' => trim((string) ($input['lugar_o_enlace'] ?? '')),
+            'observaciones' => trim((string) ($input['observaciones'] ?? '')),
+        ];
+        $errors = [];
+        $enrollment = $data['id_inscripcion'] > 0
+            ? $this->model->enrollmentForTutor($data['id_inscripcion'], $userId)
+            : null;
+
+        if (!$enrollment) {
+            $errors[] = 'Seleccione una inscripcion activa de sus estudiantes.';
+        }
+
+        $date = DateTime::createFromFormat('!Y-m-d', $data['fecha']);
+        if (!$date || $date->format('Y-m-d') !== $data['fecha']) {
+            $errors[] = 'Ingrese una fecha valida.';
+        } elseif ($data['fecha'] < date('Y-m-d')) {
+            $errors[] = 'La fecha no puede estar en el pasado.';
+        } elseif ($data['fecha'] === date('Y-m-d') && $enrollment && $enrollment['hora_inicio'] <= date('H:i:s')) {
+            $errors[] = 'La hora de inicio del bloque ya paso.';
+        }
+
+        if ($enrollment && $date) {
+            if ($data['fecha'] < $enrollment['fecha_inicio'] || $data['fecha'] > $enrollment['fecha_fin']) {
+                $errors[] = 'La fecha debe estar dentro del periodo de la inscripcion.';
+            }
+            if (!$this->model->dateAllowedForOffer((int) $enrollment['id_oferta'], $data['fecha'])) {
+                $errors[] = 'La fecha no esta habilitada en el calendario de esta oferta.';
+            }
+            if ($this->dayName($date) !== $enrollment['dia_semana']) {
+                $errors[] = 'La fecha debe corresponder al dia asignado en la inscripcion.';
+            }
+        }
+
+        if (!in_array($data['modalidad'], ['presencial', 'virtual'], true)) {
+            $errors[] = 'Seleccione una modalidad valida.';
+        }
+        if ($data['modalidad'] === 'virtual' && $data['lugar_o_enlace'] === '') {
+            $errors[] = 'Ingrese el enlace para una sesion virtual.';
+        }
+        if (strlen($data['lugar_o_enlace']) > 200) {
+            $errors[] = 'El enlace no puede superar 200 caracteres.';
+        }
+        if (strlen($data['observaciones']) > 2000) {
+            $errors[] = 'Las observaciones no pueden superar 2000 caracteres.';
+        }
+
+        if ($errors) {
+            return [$data, $errors];
+        }
+
+        try {
+            $this->model->createFromEnrollment($data['id_inscripcion'], $userId, $data);
+            return [$data, []];
+        } catch (RuntimeException $exception) {
+            return [$data, [$exception->getMessage()]];
+        } catch (PDOException $exception) {
+            error_log($exception->getMessage());
+            return [$data, ['No fue posible programar la sesion.']];
+        }
+    }
+
     public function options(): array
     {
         return $this->model->offerings();
@@ -131,5 +203,17 @@ final class TutoriasController
         }
 
         return $errors;
+    }
+
+    private function dayName(DateTime $date): string
+    {
+        return [
+            1 => 'Lunes',
+            2 => 'Martes',
+            3 => 'Miercoles',
+            4 => 'Jueves',
+            5 => 'Viernes',
+            6 => 'Sabado',
+        ][(int) $date->format('N')] ?? '';
     }
 }

@@ -1,8 +1,9 @@
 <?php
 
 require dirname(__DIR__, 2) . '/includes/bootstrap.php';
-Auth::requireAnyRole(['administrador', 'tutor']);
-Auth::requireModule('disponibilidad');
+Auth::requireLogin();
+http_response_code(410);
+exit('Los horarios son definidos por la universidad y se seleccionan desde Materias ofertadas.');
 $title = 'Nuevo horario';
 $activePage = 'disponibilidad';
 $user = Auth::user();
@@ -35,5 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $controller = new DisponibilidadController();
 $tutors = $isAdmin ? $controller->tutors() : [];
+$turns = $controller->turns();
 $mode = 'create';
 require dirname(__DIR__, 2) . '/views/disponibilidad/form.php';

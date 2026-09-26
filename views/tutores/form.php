@@ -5,7 +5,7 @@ $action = $isEditing ? app_url('tutores/edit.php?id=' . (int) $data['id_tutor'])
 require __DIR__ . '/../layouts/header.php';
 ?>
 
-<main class="container narrow-wide">
+<main class="container">
     <section class="card">
         <h1><?= e($title) ?></h1>
         <p class="form-intro">Complete el perfil profesional del tutor.</p>

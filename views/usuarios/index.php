@@ -6,7 +6,7 @@
             <h1>Cuentas de acceso</h1>
             <p>Credenciales, roles y estado de acceso al sistema.</p>
         </div>
-        <a class="button" href="<?= e(app_url('usuarios/create.php')) ?>">Nuevo usuario</a>
+        <a class="button btn btn-primary" href="<?= e(app_url('usuarios/create.php')) ?>">Nuevo usuario</a>
     </div>
 
     <?php if (!empty($message)): ?>
@@ -21,13 +21,13 @@
         <div class="search-field">
             <span class="search-icon" aria-hidden="true">/</span>
             <label class="sr-only" for="user-search">Buscar cuentas</label>
-            <input id="user-search" type="search" placeholder="Buscar cuenta..." data-table-search>
+            <input class="form-control" id="user-search" type="search" placeholder="Buscar cuenta..." data-table-search>
         </div>
         <span class="table-meta" data-table-count><?= count($usuarios) ?> resultado<?= count($usuarios) === 1 ? '' : 's' ?></span>
     </div>
 
     <div class="table-wrapper card">
-        <table>
+        <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
                     <th>Nombre</th>
@@ -48,28 +48,32 @@
                         <td><?= e($usuario['nombre_rol']) ?></td>
                         <td>
                             <?php if ($usuario['nombre_rol'] === 'estudiante'): ?>
-                                <?php if (!empty($usuario['id_estudiante'])): ?><a href="<?= e(app_url('estudiantes/edit.php?id=' . (int) $usuario['id_estudiante'])) ?>">Ver perfil</a><?php else: ?><a href="<?= e(app_url('estudiantes/create.php?usuario=' . (int) $usuario['id_usuario'])) ?>">Crear perfil</a><?php endif; ?>
+                                <?php if (!empty($usuario['id_estudiante'])): ?><a class="icon-action" href="<?= e(app_url('estudiantes/edit.php?id=' . (int) $usuario['id_estudiante'])) ?>" title="Ver perfil de estudiante" aria-label="Ver perfil de estudiante"><i class="bi bi-person-vcard" aria-hidden="true"></i><span class="visually-hidden">Ver perfil de estudiante</span></a><?php else: ?><a class="icon-action" href="<?= e(app_url('estudiantes/create.php?usuario=' . (int) $usuario['id_usuario'])) ?>" title="Crear perfil de estudiante" aria-label="Crear perfil de estudiante"><i class="bi bi-person-plus" aria-hidden="true"></i><span class="visually-hidden">Crear perfil de estudiante</span></a><?php endif; ?>
                             <?php elseif ($usuario['nombre_rol'] === 'tutor'): ?>
-                                <?php if (!empty($usuario['id_tutor'])): ?><a href="<?= e(app_url('tutores/edit.php?id=' . (int) $usuario['id_tutor'])) ?>">Ver perfil</a><?php else: ?><a href="<?= e(app_url('tutores/create.php?usuario=' . (int) $usuario['id_usuario'])) ?>">Crear perfil</a><?php endif; ?>
+                                <?php if (!empty($usuario['id_tutor'])): ?><a class="icon-action" href="<?= e(app_url('tutores/edit.php?id=' . (int) $usuario['id_tutor'])) ?>" title="Ver perfil de tutor" aria-label="Ver perfil de tutor"><i class="bi bi-person-vcard" aria-hidden="true"></i><span class="visually-hidden">Ver perfil de tutor</span></a><?php else: ?><a class="icon-action" href="<?= e(app_url('tutores/create.php?usuario=' . (int) $usuario['id_usuario'])) ?>" title="Crear perfil de tutor" aria-label="Crear perfil de tutor"><i class="bi bi-person-plus" aria-hidden="true"></i><span class="visually-hidden">Crear perfil de tutor</span></a><?php endif; ?>
                             <?php else: ?>
                                 <span class="table-muted">No aplica</span>
                             <?php endif; ?>
                         </td>
                         <td><span class="status status-<?= e($usuario['estado']) ?>"><?= e($usuario['estado']) ?></span></td>
                         <td class="actions">
-                            <a href="<?= e(app_url('usuarios/edit.php?id=' . (int) $usuario['id_usuario'])) ?>">Editar</a>
-                            <?php if ($usuario['estado'] === 'activo'): ?>
-                                <form method="post" action="<?= e(app_url('usuarios/delete.php')) ?>" onsubmit="return confirm('Desactivar este usuario?');">
-                                    <input type="hidden" name="id" value="<?= (int) $usuario['id_usuario'] ?>">
-                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                                    <button class="link-button" type="submit">Desactivar</button>
-                                </form>
+                            <?php if ((int) $usuario['id_usuario'] === (int) ($protectedAdminId ?? 0)): ?>
+                                <span class="table-muted" title="Cuenta protegida"><i class="bi bi-shield-lock" aria-hidden="true"></i><span class="visually-hidden">Cuenta admin protegida</span></span>
                             <?php else: ?>
-                                <form method="post" action="<?= e(app_url('usuarios/activate.php')) ?>" onsubmit="return confirm('Activar esta cuenta?');">
-                                    <input type="hidden" name="id" value="<?= (int) $usuario['id_usuario'] ?>">
-                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                                    <button class="link-button success-link" type="submit"><?= $usuario['estado'] === 'pendiente' ? 'Aprobar' : 'Activar' ?></button>
-                                </form>
+                                <a class="icon-action" href="<?= e(app_url('usuarios/edit.php?id=' . (int) $usuario['id_usuario'])) ?>" title="Editar usuario" aria-label="Editar usuario"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar usuario</span></a>
+                                <?php if ($usuario['estado'] === 'activo'): ?>
+                                    <form method="post" action="<?= e(app_url('usuarios/delete.php')) ?>" onsubmit="return confirm('Desactivar este usuario?');">
+                                        <input type="hidden" name="id" value="<?= (int) $usuario['id_usuario'] ?>">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <button class="link-button icon-action icon-action-danger" type="submit" title="Desactivar usuario" aria-label="Desactivar usuario"><i class="bi bi-person-dash" aria-hidden="true"></i><span class="visually-hidden">Desactivar usuario</span></button>
+                                    </form>
+                                <?php else: ?>
+                                    <form method="post" action="<?= e(app_url('usuarios/activate.php')) ?>" onsubmit="return confirm('Activar esta cuenta?');">
+                                        <input type="hidden" name="id" value="<?= (int) $usuario['id_usuario'] ?>">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <button class="link-button icon-action icon-action-success" type="submit" title="<?= $usuario['estado'] === 'pendiente' ? 'Aprobar usuario' : 'Activar usuario' ?>" aria-label="<?= $usuario['estado'] === 'pendiente' ? 'Aprobar usuario' : 'Activar usuario' ?>"><i class="bi bi-person-check" aria-hidden="true"></i><span class="visually-hidden"><?= $usuario['estado'] === 'pendiente' ? 'Aprobar usuario' : 'Activar usuario' ?></span></button>
+                                    </form>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </td>
                     </tr>

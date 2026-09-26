@@ -9,6 +9,10 @@ INSERT INTO roles (nombre_rol)
 SELECT 'tutor' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE nombre_rol = 'tutor');
 INSERT INTO roles (nombre_rol)
 SELECT 'estudiante' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE nombre_rol = 'estudiante');
+INSERT INTO roles (nombre_rol)
+SELECT 'coordinador_mg' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE nombre_rol = 'coordinador_mg');
+INSERT INTO roles (nombre_rol)
+SELECT 'auxiliar_mg' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE nombre_rol = 'auxiliar_mg');
 
 INSERT INTO carreras (nombre_carrera)
 SELECT 'Ingenieria de Sistemas'

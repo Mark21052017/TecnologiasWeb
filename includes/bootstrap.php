@@ -37,6 +37,8 @@ require_once dirname(__DIR__) . '/models/Usuario.php';
 require_once dirname(__DIR__) . '/models/Rol.php';
 require_once dirname(__DIR__) . '/models/Carrera.php';
 require_once dirname(__DIR__) . '/models/Materia.php';
+require_once dirname(__DIR__) . '/models/TipoTutoria.php';
+require_once dirname(__DIR__) . '/models/Perfil.php';
 require_once dirname(__DIR__) . '/models/Dashboard.php';
 require_once dirname(__DIR__) . '/models/Estudiante.php';
 require_once dirname(__DIR__) . '/models/Tutor.php';
@@ -47,14 +49,25 @@ require_once dirname(__DIR__) . '/models/EvaluacionTutoria.php';
 require_once dirname(__DIR__) . '/models/RegistroAcceso.php';
 require_once dirname(__DIR__) . '/models/Permiso.php';
 require_once dirname(__DIR__) . '/models/RegistroEstudiante.php';
+require_once dirname(__DIR__) . '/models/RegistroUniversitario.php';
 require_once dirname(__DIR__) . '/models/CatalogoEstudiante.php';
 require_once dirname(__DIR__) . '/models/RegistroTutor.php';
 require_once dirname(__DIR__) . '/models/TutorPortal.php';
+require_once dirname(__DIR__) . '/models/PeriodoTutoria.php';
+require_once dirname(__DIR__) . '/models/Turno.php';
+require_once dirname(__DIR__) . '/models/Aula.php';
+require_once dirname(__DIR__) . '/models/OfertaTutoria.php';
+require_once dirname(__DIR__) . '/models/InscripcionTutoria.php';
+require_once dirname(__DIR__) . '/models/SolicitudTutor.php';
+require_once dirname(__DIR__) . '/models/MgPermiso.php';
+require_once dirname(__DIR__) . '/models/MgConfiguracion.php';
 require_once dirname(__DIR__) . '/controller/AuthController.php';
 require_once dirname(__DIR__) . '/controller/UsuariosController.php';
 require_once dirname(__DIR__) . '/controller/RolesController.php';
 require_once dirname(__DIR__) . '/controller/CarrerasController.php';
 require_once dirname(__DIR__) . '/controller/MateriasController.php';
+require_once dirname(__DIR__) . '/controller/TiposTutoriaController.php';
+require_once dirname(__DIR__) . '/controller/PerfilController.php';
 require_once dirname(__DIR__) . '/controller/DashboardController.php';
 require_once dirname(__DIR__) . '/controller/EstudiantesController.php';
 require_once dirname(__DIR__) . '/controller/TutoresController.php';
@@ -68,6 +81,15 @@ require_once dirname(__DIR__) . '/controller/RegistroController.php';
 require_once dirname(__DIR__) . '/controller/CatalogoEstudianteController.php';
 require_once dirname(__DIR__) . '/controller/RegistroTutorController.php';
 require_once dirname(__DIR__) . '/controller/TutorPortalController.php';
+require_once dirname(__DIR__) . '/controller/PeriodosController.php';
+require_once dirname(__DIR__) . '/controller/TurnosController.php';
+require_once dirname(__DIR__) . '/controller/AulasController.php';
+require_once dirname(__DIR__) . '/controller/OfertasController.php';
+require_once dirname(__DIR__) . '/controller/InscripcionesController.php';
+require_once dirname(__DIR__) . '/controller/SolicitudesTutorController.php';
+require_once dirname(__DIR__) . '/controller/MgConfiguracionController.php';
+
+require_once __DIR__ . '/permisos.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_set_cookie_params([
@@ -76,6 +98,27 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
         'samesite' => 'Lax',
     ]);
     session_start();
+}
+
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
+function flash_set(string $key, mixed $value): void
+{
+    $_SESSION['_flash'][$key] = $value;
+}
+
+function flash_get(string $key, mixed $default = null): mixed
+{
+    if (!array_key_exists($key, $_SESSION['_flash'] ?? [])) {
+        return $default;
+    }
+
+    $value = $_SESSION['_flash'][$key];
+    unset($_SESSION['_flash'][$key]);
+
+    return $value;
 }
 
 function app_url(string $path = ''): string

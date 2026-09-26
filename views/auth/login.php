@@ -6,11 +6,11 @@ require __DIR__ . '/../layouts/header.php';
 <main class="auth-container">
     <section class="auth-intro">
         <div>
-            <span class="brand-mark">TA</span>
+            <img class="brand-logo auth-brand-logo" src="<?= e(app_url('img/logo2.png')) ?>" alt="Universidad Privada Domingo Savio">
         </div>
         <div>
             <span class="hero-kicker">Tutoria academica</span>
-            <h1>Aprender mejor, acompanado.</h1>
+            <h1>Aprender mejor, acompañado.</h1>
             <p>Organiza tus sesiones de apoyo, conecta con tutores y sigue tu avance academico desde un solo lugar.</p>
         </div>
         <ul class="auth-points">
@@ -20,7 +20,7 @@ require __DIR__ . '/../layouts/header.php';
     </section>
 
     <section class="auth-form-panel">
-        <div class="card">
+            <div class="card shadow-sm border-0">
             <span class="eyebrow">Acceso seguro</span>
             <h2>Bienvenido de nuevo</h2>
             <p>Ingresa tus datos para continuar.</p>
@@ -31,13 +31,14 @@ require __DIR__ . '/../layouts/header.php';
             <?php if (!empty($success)): ?><p class="success" role="status"><?= e($success) ?></p><?php endif; ?>
 
             <form method="post" action="<?= e(app_url('login.php')) ?>">
-                <label for="usuario">Usuario</label>
-                <input id="usuario" name="usuario" type="text" minlength="4" maxlength="50" pattern="[A-Za-z0-9._-]{4,50}" required autocomplete="username" value="<?= e($username ?? '') ?>">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <label class="form-label" for="usuario">Usuario</label>
+                <input class="form-control" id="usuario" name="usuario" type="text" minlength="4" maxlength="50" pattern="[A-Za-z0-9._-]{4,50}" required autocomplete="username" value="<?= e($username ?? '') ?>">
 
-                <label for="contrasena">Contrasena</label>
-                <input id="contrasena" name="contrasena" type="password" required autocomplete="current-password">
+                <label class="form-label" for="contrasena">Contrasena</label>
+                <input class="form-control" id="contrasena" name="contrasena" type="password" required autocomplete="current-password">
 
-                <button type="submit">Iniciar sesion <span aria-hidden="true">-&gt;</span></button>
+                <button class="btn btn-primary w-100" type="submit">Iniciar sesion <span aria-hidden="true">-&gt;</span></button>
             </form>
             <p class="auth-switch">¿Aun no tienes una cuenta? <a href="<?= e(app_url('register.php')) ?>">Registrate como estudiante</a></p>
             <p class="auth-switch"><a href="<?= e(app_url('postular-tutor.php')) ?>">Postulate como tutor</a></p>

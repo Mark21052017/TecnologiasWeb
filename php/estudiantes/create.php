@@ -10,7 +10,6 @@ $data = [
     'id_usuario' => (string) (filter_input(INPUT_GET, 'usuario', FILTER_VALIDATE_INT) ?: ''),
     'id_carrera' => '',
     'semestre' => '',
-    'registro_universitario' => '',
 ];
 $errors = [];
 

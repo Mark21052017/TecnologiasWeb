@@ -5,10 +5,9 @@ Auth::requireRole('administrador');
 Auth::requireModule('permisos');
 $title = 'Permisos';
 $activePage = 'permisos';
-$roleId = filter_input(INPUT_GET, 'rol', FILTER_VALIDATE_INT) ?: null;
-$userId = filter_input(INPUT_GET, 'usuario', FILTER_VALIDATE_INT) ?: null;
+$roleName = isset($_GET['rol']) && is_string($_GET['rol']) ? trim($_GET['rol']) : null;
 $controller = new PermisosController();
-$data = $controller->data($roleId, $userId);
+$data = $controller->data($roleName);
 $message = ($_GET['message'] ?? '') === 'saved' ? 'Permisos guardados correctamente.' : null;
 $error = isset($_GET['error']) && is_string($_GET['error']) ? $_GET['error'] : null;
 

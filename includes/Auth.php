@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 final class Auth
 {
+    private static array $permissionMapCache = [];
+
     public static function login(array $user): void
     {
         session_regenerate_id(true);
@@ -13,6 +15,7 @@ final class Auth
 
     public static function logout(): void
     {
+        self::$permissionMapCache = [];
         $_SESSION = [];
 
         if (ini_get('session.use_cookies')) {
@@ -71,7 +74,12 @@ final class Auth
             return true;
         }
 
-        return (new Permiso())->can((int) self::user()['id_usuario'], $module);
+        $userId = (int) self::user()['id_usuario'];
+        if (!array_key_exists($userId, self::$permissionMapCache)) {
+            self::$permissionMapCache[$userId] = (new Permiso())->forUser($userId);
+        }
+
+        return self::$permissionMapCache[$userId][$module] ?? false;
     }
 
     public static function requireModule(string $module): void

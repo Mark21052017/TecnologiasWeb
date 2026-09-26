@@ -5,10 +5,10 @@ $action = $isEditing ? app_url('estudiantes/edit.php?id=' . (int) $data['id_estu
 require __DIR__ . '/../layouts/header.php';
 ?>
 
-<main class="container narrow-wide">
-    <section class="card">
+<main class="container">
+    <section class="card shadow-sm border-0">
         <h1><?= e($title) ?></h1>
-        <p class="form-intro">Complete los datos academicos del perfil.</p>
+        <p class="form-intro">Complete los datos academicos del perfil. El registro universitario se genera automaticamente.</p>
         <?php if (!empty($errors)): ?>
             <div class="alert" role="alert"><ul><?php foreach ($errors as $formError): ?><li><?= e($formError) ?></li><?php endforeach; ?></ul></div>
         <?php endif; ?>
@@ -16,8 +16,8 @@ require __DIR__ . '/../layouts/header.php';
             <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
             <div class="form-grid">
                 <div>
-                    <label for="id_usuario">Usuario estudiante</label>
-                    <select id="id_usuario" name="id_usuario" required>
+                    <label class="form-label" for="id_usuario">Usuario estudiante</label>
+                    <select class="form-select" id="id_usuario" name="id_usuario" required>
                         <option value="">Seleccione</option>
                         <?php foreach ($options['users'] as $option): ?>
                             <option value="<?= (int) $option['id_usuario'] ?>" <?= (string) ($data['id_usuario'] ?? '') === (string) $option['id_usuario'] ? 'selected' : '' ?>><?= e($option['apellido'] . ', ' . $option['nombre'] . ' - ' . $option['usuario']) ?></option>
@@ -26,8 +26,8 @@ require __DIR__ . '/../layouts/header.php';
                     <?php if (!$options['users']): ?><small>No hay usuarios estudiante disponibles.</small><?php endif; ?>
                 </div>
                 <div>
-                    <label for="id_carrera">Carrera</label>
-                    <select id="id_carrera" name="id_carrera" required>
+                    <label class="form-label" for="id_carrera">Carrera</label>
+                    <select class="form-select" id="id_carrera" name="id_carrera" required>
                         <option value="">Seleccione</option>
                         <?php foreach ($options['careers'] as $career): ?>
                             <option value="<?= (int) $career['id_carrera'] ?>" <?= (string) ($data['id_carrera'] ?? '') === (string) $career['id_carrera'] ? 'selected' : '' ?>><?= e($career['nombre_carrera']) ?></option>
@@ -35,16 +35,12 @@ require __DIR__ . '/../layouts/header.php';
                     </select>
                 </div>
                 <div>
-                    <label for="semestre">Semestre</label>
-                    <input id="semestre" name="semestre" type="number" min="1" max="20" required value="<?= e($data['semestre'] ?? '') ?>">
-                </div>
-                <div>
-                    <label for="registro_universitario">Registro universitario</label>
-                    <input id="registro_universitario" name="registro_universitario" type="text" maxlength="30" pattern="[A-Za-z0-9-]{1,30}" title="Use solo letras, numeros y guiones." value="<?= e($data['registro_universitario'] ?? '') ?>">
+                    <label class="form-label" for="semestre">Semestre</label>
+                    <input class="form-control" id="semestre" name="semestre" type="number" min="1" max="20" required value="<?= e($data['semestre'] ?? '') ?>">
                 </div>
             </div>
-            <button type="submit">Guardar</button>
-            <a class="button secondary" href="<?= e(app_url('estudiantes/')) ?>">Cancelar</a>
+            <button class="btn btn-primary" type="submit">Guardar</button>
+            <a class="button secondary btn btn-outline-secondary" href="<?= e(app_url('estudiantes/')) ?>">Cancelar</a>
         </form>
     </section>
 </main>

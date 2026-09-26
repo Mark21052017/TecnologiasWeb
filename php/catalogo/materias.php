@@ -2,9 +2,13 @@
 
 require dirname(__DIR__, 2) . '/includes/bootstrap.php';
 Auth::requireRole('estudiante');
-Auth::requireModule('materias');
+Auth::requireModule('ofertas');
 $title = 'Materias disponibles';
 $activePage = 'materias-disponibles';
-$subjects = (new CatalogoEstudianteController())->materias();
+$user = Auth::user();
+$studentId = (new Tutoria())->studentIdByUserId((int) $user['id_usuario']);
+$subjects = (new OfertasController())->publicOffers($studentId);
+$message = (string) ($_GET['message'] ?? '') === 'created' ? 'Inscripcion registrada correctamente.' : null;
+$error = (string) ($_GET['error'] ?? '');
 
 require dirname(__DIR__, 2) . '/views/catalogo/materias.php';

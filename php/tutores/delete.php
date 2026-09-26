@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf_token($_POST['csrf_tok
 
 $id = filter_var($_POST['id'] ?? null, FILTER_VALIDATE_INT);
 if (!$id) {
-    header('Location: ' . app_url('tutores/?error=Tutor no valido.'));
+    header('Location: ' . app_url('tutores/?error=' . rawurlencode('Tutor no valido.')), true, 303);
     exit;
 }
 

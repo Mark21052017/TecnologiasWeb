@@ -18,7 +18,6 @@ $data = [
     'telefono' => '',
     'id_carrera' => '',
     'semestre' => '',
-    'registro_universitario' => '',
 ];
 $errors = [];
 $controller = new RegistroController();

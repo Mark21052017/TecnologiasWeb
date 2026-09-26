@@ -26,6 +26,11 @@ final class DisponibilidadController
         return $this->model->tutors();
     }
 
+    public function turns(): array
+    {
+        return (new Turno())->all(false);
+    }
+
     public function store(array $input, ?int $forcedTutorId = null): array
     {
         $data = $this->normalize($input, $forcedTutorId);
@@ -86,8 +91,7 @@ final class DisponibilidadController
         return [
             'id_tutor' => $forcedTutorId ?? trim((string) ($input['id_tutor'] ?? '')),
             'dia_semana' => trim((string) ($input['dia_semana'] ?? '')),
-            'hora_inicio' => trim((string) ($input['hora_inicio'] ?? '')),
-            'hora_fin' => trim((string) ($input['hora_fin'] ?? '')),
+            'id_turno' => trim((string) ($input['id_turno'] ?? '')),
         ];
     }
 
@@ -103,12 +107,10 @@ final class DisponibilidadController
         if (!in_array($data['dia_semana'], $days, true)) {
             $errors[] = 'Seleccione un dia valido.';
         }
-        $startError = validation_time($data['hora_inicio'], 'hora inicial');
-        $endError = validation_time($data['hora_fin'], 'hora final');
-        if ($startError !== null || $endError !== null) {
-            $errors[] = 'Ingrese horarios validos.';
-        } elseif ($data['hora_fin'] <= $data['hora_inicio']) {
-            $errors[] = 'La hora final debe ser posterior a la inicial.';
+        $turnId = filter_var($data['id_turno'], FILTER_VALIDATE_INT);
+        $turn = $turnId ? (new Turno())->find((int) $turnId) : null;
+        if (!$turn || $turn['estado'] !== 'activo') {
+            $errors[] = 'Seleccione un turno valido.';
         }
 
         return $errors;

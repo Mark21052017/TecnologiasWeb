@@ -13,6 +13,14 @@ $messages = [
 ];
 $message = $messages[$_GET['message'] ?? ''] ?? null;
 $error = isset($_GET['error']) && is_string($_GET['error']) ? $_GET['error'] : null;
-$usuarios = (new UsuariosController())->index();
+$controller = new UsuariosController();
+$usuarios = $controller->index();
+$protectedAdminId = null;
+foreach ($usuarios as $usuario) {
+    if (!empty($usuario['es_admin_protegido'])) {
+        $protectedAdminId = (int) $usuario['id_usuario'];
+        break;
+    }
+}
 
 require dirname(__DIR__) . '/views/usuarios/index.php';

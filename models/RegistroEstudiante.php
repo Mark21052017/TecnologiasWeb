@@ -48,14 +48,17 @@ final class RegistroEstudiante
                 'telefono' => $data['telefono'] !== '' ? $data['telefono'] : null,
             ]);
 
+            $userId = (int) $pdo->lastInsertId();
+            $registroUniversitario = RegistroUniversitario::next($pdo);
+
             $studentStatement = $pdo->prepare(
                 'INSERT INTO estudiantes (id_usuario, id_carrera, semestre, registro_universitario) VALUES (:id_usuario, :id_carrera, :semestre, :registro_universitario)'
             );
             $studentStatement->execute([
-                'id_usuario' => (int) $pdo->lastInsertId(),
+                'id_usuario' => $userId,
                 'id_carrera' => $data['id_carrera'],
                 'semestre' => $data['semestre'],
-                'registro_universitario' => $data['registro_universitario'] !== '' ? $data['registro_universitario'] : null,
+                'registro_universitario' => $registroUniversitario,
             ]);
             $pdo->commit();
         } catch (Throwable $exception) {

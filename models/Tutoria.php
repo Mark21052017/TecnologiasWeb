@@ -7,9 +7,10 @@ final class Tutoria
     private function selectSql(): string
     {
         return <<<'SQL'
-            SELECT t.id_tutoria, t.id_estudiante, t.id_tutor, t.id_materia,
+            SELECT t.id_tutoria, t.id_inscripcion, t.id_estudiante, t.id_tutor, t.id_materia,
                    t.fecha, t.hora_inicio, t.hora_fin, t.modalidad,
                    t.lugar_o_enlace, t.estado, t.observaciones, t.fecha_solicitud,
+                    oh.dia_semana, b.id_turno, b.nombre_turno,
                    CONCAT(eu.nombre, ' ', eu.apellido) AS estudiante,
                    CONCAT(tu.nombre, ' ', tu.apellido) AS tutor,
                    m.nombre_materia
@@ -19,6 +20,10 @@ final class Tutoria
             INNER JOIN tutores tr ON tr.id_tutor = t.id_tutor
             INNER JOIN usuarios tu ON tu.id_usuario = tr.id_usuario
             INNER JOIN materias m ON m.id_materia = t.id_materia
+             LEFT JOIN inscripciones_tutoria i ON i.id_inscripcion = t.id_inscripcion
+             LEFT JOIN oferta_horarios oh ON oh.id_oferta_horario = i.id_oferta_horario
+             LEFT JOIN ofertas_tutoria o ON o.id_oferta = i.id_oferta
+             LEFT JOIN turnos b ON b.id_turno = o.id_turno
         SQL;
     }
 
@@ -82,6 +87,173 @@ final class Tutoria
         return $statement->fetchAll();
     }
 
+    public function sessionOptionsForTutor(int $userId): array
+    {
+        $statement = Database::connection()->prepare(
+            "SELECT i.id_inscripcion, i.id_estudiante, i.id_oferta, i.id_oferta_tutor,
+                    p.nombre_periodo, p.fecha_inicio, p.fecha_fin,
+                    m.nombre_materia, o.nombre_grupo,
+                    CONCAT(eu.nombre, ' ', eu.apellido) AS estudiante,
+                    oh.dia_semana, b.nombre_turno, b.hora_inicio, b.hora_fin,
+                    a.nombre_aula, a.ubicacion,
+                    COUNT(ts.id_tutoria) AS sesiones_programadas
+             FROM inscripciones_tutoria i
+             INNER JOIN ofertas_tutoria o ON o.id_oferta = i.id_oferta
+             INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+             INNER JOIN materias m ON m.id_materia = o.id_materia
+             INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor
+             INNER JOIN tutores tr ON tr.id_tutor = ot.id_tutor
+             INNER JOIN usuarios tu ON tu.id_usuario = tr.id_usuario
+             INNER JOIN estudiantes e ON e.id_estudiante = i.id_estudiante
+             INNER JOIN usuarios eu ON eu.id_usuario = e.id_usuario
+             INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = i.id_oferta_horario
+              INNER JOIN turnos b ON b.id_turno = o.id_turno
+             LEFT JOIN aulas a ON a.id_aula = oh.id_aula
+             LEFT JOIN tutorias ts ON ts.id_inscripcion = i.id_inscripcion AND ts.estado <> 'cancelada'
+             WHERE tu.id_usuario = :id_usuario AND i.estado = 'inscrita'
+             GROUP BY i.id_inscripcion, i.id_estudiante, i.id_oferta, i.id_oferta_tutor,
+                      p.nombre_periodo, p.fecha_inicio, p.fecha_fin, m.nombre_materia,
+                      o.nombre_grupo, eu.nombre, eu.apellido, oh.dia_semana,
+                       b.nombre_turno, b.hora_inicio, b.hora_fin, a.nombre_aula, a.ubicacion
+             ORDER BY p.fecha_inicio DESC, m.nombre_materia, estudiante"
+        );
+        $statement->execute(['id_usuario' => $userId]);
+
+        return $statement->fetchAll();
+    }
+
+    public function enrollmentForTutor(int $enrollmentId, int $userId): ?array
+    {
+        $statement = Database::connection()->prepare(
+            "SELECT i.id_inscripcion, i.id_estudiante, i.id_oferta, i.estado AS inscripcion_estado,
+                    p.id_periodo, p.fecha_inicio, p.fecha_fin, m.id_materia, m.nombre_materia, o.id_tipo_tutoria,
+                    ot.id_tutor, oh.dia_semana, b.hora_inicio, b.hora_fin,
+                    a.nombre_aula, a.ubicacion
+             FROM inscripciones_tutoria i
+             INNER JOIN ofertas_tutoria o ON o.id_oferta = i.id_oferta
+             INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+             INNER JOIN materias m ON m.id_materia = o.id_materia
+             INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor
+             INNER JOIN tutores tr ON tr.id_tutor = ot.id_tutor
+             INNER JOIN usuarios tu ON tu.id_usuario = tr.id_usuario
+             INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = i.id_oferta_horario
+              INNER JOIN turnos b ON b.id_turno = o.id_turno
+             LEFT JOIN aulas a ON a.id_aula = oh.id_aula
+             WHERE i.id_inscripcion = :id_inscripcion
+               AND i.estado = 'inscrita'
+               AND tu.id_usuario = :id_usuario
+             LIMIT 1"
+        );
+        $statement->execute(['id_inscripcion' => $enrollmentId, 'id_usuario' => $userId]);
+        $enrollment = $statement->fetch();
+
+        return $enrollment ?: null;
+    }
+
+    public function createFromEnrollment(int $enrollmentId, int $userId, array $data): void
+    {
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $statement = $pdo->prepare(
+                "SELECT i.id_inscripcion, i.id_estudiante, i.id_oferta, p.fecha_inicio, p.fecha_fin,
+                        m.id_materia, ot.id_tutor, oh.dia_semana,
+                        b.hora_inicio, b.hora_fin, a.nombre_aula, a.ubicacion
+                 FROM inscripciones_tutoria i
+                 INNER JOIN ofertas_tutoria o ON o.id_oferta = i.id_oferta
+                 INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+                 INNER JOIN materias m ON m.id_materia = o.id_materia
+                 INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor
+                 INNER JOIN tutores tr ON tr.id_tutor = ot.id_tutor
+                 INNER JOIN usuarios tu ON tu.id_usuario = tr.id_usuario
+                 INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = i.id_oferta_horario
+                  INNER JOIN turnos b ON b.id_turno = o.id_turno
+                 LEFT JOIN aulas a ON a.id_aula = oh.id_aula
+                 WHERE i.id_inscripcion = :id_inscripcion
+                   AND i.estado = 'inscrita'
+                   AND tu.id_usuario = :id_usuario
+                 LIMIT 1 FOR UPDATE"
+            );
+            $statement->execute(['id_inscripcion' => $enrollmentId, 'id_usuario' => $userId]);
+            $enrollment = $statement->fetch();
+            if (!$enrollment) {
+                throw new RuntimeException('La inscripcion no existe, no esta activa o no pertenece al tutor.');
+            }
+
+            if ($data['fecha'] < $enrollment['fecha_inicio'] || $data['fecha'] > $enrollment['fecha_fin']) {
+                throw new RuntimeException('La fecha debe estar dentro del periodo de la inscripcion.');
+            }
+            $allowedDate = $pdo->prepare(
+                "SELECT 1 FROM oferta_tutoria_fechas
+                 WHERE id_oferta = :id_oferta AND fecha = :fecha AND estado = 'activa' LIMIT 1"
+            );
+            $allowedDate->execute(['id_oferta' => $enrollment['id_oferta'], 'fecha' => $data['fecha']]);
+            if (!$allowedDate->fetchColumn()) {
+                throw new RuntimeException('La fecha no esta habilitada en el calendario de esta oferta.');
+            }
+            $date = DateTime::createFromFormat('!Y-m-d', $data['fecha']);
+            $dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+            if (!$date || $dayNames[(int) $date->format('w')] !== $enrollment['dia_semana']) {
+                throw new RuntimeException('La fecha debe corresponder al dia asignado en la inscripcion.');
+            }
+
+            $conflict = $pdo->prepare(
+                "SELECT 1
+                 FROM tutorias
+                 WHERE (id_tutor = :id_tutor OR id_estudiante = :id_estudiante)
+                   AND fecha = :fecha
+                   AND estado IN ('pendiente', 'confirmada')
+                   AND hora_inicio < :hora_fin
+                   AND hora_fin > :hora_inicio
+                 LIMIT 1"
+            );
+            $conflict->execute([
+                'id_tutor' => $enrollment['id_tutor'],
+                'id_estudiante' => $enrollment['id_estudiante'],
+                'fecha' => $data['fecha'],
+                'hora_inicio' => $enrollment['hora_inicio'],
+                'hora_fin' => $enrollment['hora_fin'],
+            ]);
+            if ($conflict->fetchColumn()) {
+                throw new RuntimeException('El tutor o el estudiante ya tiene otra sesion en ese horario.');
+            }
+
+            if ($data['modalidad'] === 'virtual') {
+                $place = $data['lugar_o_enlace'];
+            } else {
+                $room = trim((string) ($enrollment['nombre_aula'] ?? ''));
+                $location = trim((string) ($enrollment['ubicacion'] ?? ''));
+                $place = trim($room . ($room !== '' && $location !== '' ? ' - ' : '') . $location);
+            }
+
+            $insert = $pdo->prepare(
+                "INSERT INTO tutorias
+                    (id_inscripcion, id_estudiante, id_tutor, id_materia, fecha,
+                     hora_inicio, hora_fin, modalidad, lugar_o_enlace, estado, observaciones)
+                 VALUES (:id_inscripcion, :id_estudiante, :id_tutor, :id_materia, :fecha,
+                         :hora_inicio, :hora_fin, :modalidad, :lugar_o_enlace, 'pendiente', :observaciones)"
+            );
+            $insert->execute([
+                'id_inscripcion' => $enrollment['id_inscripcion'],
+                'id_estudiante' => $enrollment['id_estudiante'],
+                'id_tutor' => $enrollment['id_tutor'],
+                'id_materia' => $enrollment['id_materia'],
+                'fecha' => $data['fecha'],
+                'hora_inicio' => $enrollment['hora_inicio'],
+                'hora_fin' => $enrollment['hora_fin'],
+                'modalidad' => $data['modalidad'],
+                'lugar_o_enlace' => $place !== '' ? $place : null,
+                'observaciones' => $data['observaciones'] !== '' ? $data['observaciones'] : null,
+            ]);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
     public function findForViewer(int $id, string $role, int $userId): ?array
     {
         $sql = $this->selectSql() . ' WHERE t.id_tutoria = :id_tutoria';
@@ -117,16 +289,17 @@ final class Tutoria
             SELECT tm.id_tutor, tm.id_materia,
                    CONCAT(u.nombre, ' ', u.apellido) AS tutor,
                    m.nombre_materia,
-                   GROUP_CONCAT(
-                       DISTINCT CONCAT(d.dia_semana, ' ', TIME_FORMAT(d.hora_inicio, '%H:%i'), '-', TIME_FORMAT(d.hora_fin, '%H:%i'))
-                       ORDER BY FIELD(d.dia_semana, 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'), d.hora_inicio
+                   COALESCE(GROUP_CONCAT(
+                         DISTINCT CONCAT(d.dia_semana, ' ', b.nombre_turno)
+                        ORDER BY FIELD(d.dia_semana, 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'), b.hora_inicio
                        SEPARATOR ', '
-                   ) AS disponibilidad
+                   ), '') AS disponibilidad
             FROM tutor_materia tm
             INNER JOIN tutores t ON t.id_tutor = tm.id_tutor
             INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
             INNER JOIN materias m ON m.id_materia = tm.id_materia
-            INNER JOIN disponibilidad_tutor d ON d.id_tutor = tm.id_tutor
+              LEFT JOIN disponibilidad_tutor d ON d.id_tutor = tm.id_tutor AND d.id_turno IS NOT NULL
+              LEFT JOIN turnos b ON b.id_turno = d.id_turno AND b.estado = 'activo'
             WHERE u.estado = 'activo'
             GROUP BY tm.id_tutor, tm.id_materia, u.nombre, u.apellido, m.nombre_materia
             ORDER BY m.nombre_materia, u.apellido, u.nombre
@@ -171,6 +344,7 @@ final class Tutoria
         $sql = <<<'SQL'
             SELECT 1
             FROM disponibilidad_tutor d
+             INNER JOIN turnos b ON b.id_turno = d.id_turno AND b.estado = 'activo'
             WHERE d.id_tutor = :id_tutor
               AND d.dia_semana = CASE WEEKDAY(:fecha)
                     WHEN 0 THEN 'Lunes'
@@ -180,8 +354,8 @@ final class Tutoria
                     WHEN 4 THEN 'Viernes'
                     WHEN 5 THEN 'Sabado'
                   END
-              AND d.hora_inicio <= :hora_inicio
-              AND d.hora_fin >= :hora_fin
+              AND b.hora_inicio <= :hora_inicio
+              AND b.hora_fin >= :hora_fin
             LIMIT 1
         SQL;
         $statement = Database::connection()->prepare($sql);
@@ -191,6 +365,17 @@ final class Tutoria
             'hora_inicio' => $start,
             'hora_fin' => $end,
         ]);
+
+        return (bool) $statement->fetchColumn();
+    }
+
+    public function dateAllowedForOffer(int $offerId, string $date): bool
+    {
+        $statement = Database::connection()->prepare(
+            "SELECT 1 FROM oferta_tutoria_fechas
+             WHERE id_oferta = :id_oferta AND fecha = :fecha AND estado = 'activa' LIMIT 1"
+        );
+        $statement->execute(['id_oferta' => $offerId, 'fecha' => $date]);
 
         return (bool) $statement->fetchColumn();
     }

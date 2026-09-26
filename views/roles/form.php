@@ -6,17 +6,17 @@ require __DIR__ . '/../layouts/header.php';
 ?>
 
 <main class="container narrow">
-    <section class="card">
+    <section class="card shadow-sm border-0">
         <h1><?= e($title) ?></h1>
         <?php if (!empty($errors)): ?>
             <div class="alert" role="alert"><ul><?php foreach ($errors as $formError): ?><li><?= e($formError) ?></li><?php endforeach; ?></ul></div>
         <?php endif; ?>
         <form method="post" action="<?= e($action) ?>">
             <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-            <label for="nombre_rol">Nombre del rol</label>
-            <input id="nombre_rol" name="nombre_rol" type="text" minlength="2" maxlength="30" required value="<?= e($data['nombre_rol'] ?? '') ?>">
-            <button type="submit">Guardar</button>
-            <a class="button secondary" href="<?= e(app_url('roles/')) ?>">Cancelar</a>
+            <label class="form-label" for="nombre_rol">Nombre del rol</label>
+            <input class="form-control" id="nombre_rol" name="nombre_rol" type="text" minlength="2" maxlength="30" required value="<?= e($data['nombre_rol'] ?? '') ?>">
+            <button class="btn btn-primary" type="submit">Guardar</button>
+            <a class="button secondary btn btn-outline-secondary" href="<?= e(app_url('roles/')) ?>">Cancelar</a>
         </form>
     </section>
 </main>

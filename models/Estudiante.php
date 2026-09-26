@@ -91,28 +91,37 @@ final class Estudiante
 
     public function create(array $data): void
     {
-        $statement = Database::connection()->prepare(
-            'INSERT INTO estudiantes (id_usuario, id_carrera, semestre, registro_universitario) VALUES (:id_usuario, :id_carrera, :semestre, :registro_universitario)'
-        );
-        $statement->execute([
-            'id_usuario' => $data['id_usuario'],
-            'id_carrera' => $data['id_carrera'],
-            'semestre' => $data['semestre'],
-            'registro_universitario' => $data['registro_universitario'] !== '' ? $data['registro_universitario'] : null,
-        ]);
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $statement = $pdo->prepare(
+                'INSERT INTO estudiantes (id_usuario, id_carrera, semestre, registro_universitario) VALUES (:id_usuario, :id_carrera, :semestre, :registro_universitario)'
+            );
+            $statement->execute([
+                'id_usuario' => $data['id_usuario'],
+                'id_carrera' => $data['id_carrera'],
+                'semestre' => $data['semestre'],
+                'registro_universitario' => RegistroUniversitario::next($pdo),
+            ]);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
     }
 
     public function update(int $id, array $data): void
     {
         $statement = Database::connection()->prepare(
-            'UPDATE estudiantes SET id_usuario = :id_usuario, id_carrera = :id_carrera, semestre = :semestre, registro_universitario = :registro_universitario WHERE id_estudiante = :id_estudiante'
+            'UPDATE estudiantes SET id_usuario = :id_usuario, id_carrera = :id_carrera, semestre = :semestre WHERE id_estudiante = :id_estudiante'
         );
         $statement->execute([
             'id_estudiante' => $id,
             'id_usuario' => $data['id_usuario'],
             'id_carrera' => $data['id_carrera'],
             'semestre' => $data['semestre'],
-            'registro_universitario' => $data['registro_universitario'] !== '' ? $data['registro_universitario'] : null,
         ]);
     }
 

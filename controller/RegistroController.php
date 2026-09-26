@@ -48,7 +48,6 @@ final class RegistroController
             'telefono' => trim((string) ($input['telefono'] ?? '')),
             'id_carrera' => trim((string) ($input['id_carrera'] ?? '')),
             'semestre' => trim((string) ($input['semestre'] ?? '')),
-            'registro_universitario' => trim((string) ($input['registro_universitario'] ?? '')),
         ];
     }
 
@@ -87,11 +86,6 @@ final class RegistroController
         if ($semester === false || $semester < 1 || $semester > 20) {
             $errors[] = 'El semestre debe estar entre 1 y 20.';
         }
-        $registrationError = validation_code($data['registro_universitario'], 'registro universitario', 30);
-        if ($registrationError !== null) {
-            $errors[] = $registrationError;
-        }
-
         return $errors;
     }
 }

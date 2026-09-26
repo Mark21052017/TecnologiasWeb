@@ -30,6 +30,21 @@ final class Carrera
         $statement->execute(['nombre_carrera' => $name]);
     }
 
+    public function nameExists(string $name, ?int $excludeId = null): bool
+    {
+        $sql = 'SELECT 1 FROM carreras WHERE nombre_carrera_clave = LOWER(TRIM(:nombre_carrera))';
+        $params = ['nombre_carrera' => $name];
+        if ($excludeId !== null) {
+            $sql .= ' AND id_carrera <> :exclude_id';
+            $params['exclude_id'] = $excludeId;
+        }
+        $sql .= ' LIMIT 1';
+        $statement = Database::connection()->prepare($sql);
+        $statement->execute($params);
+
+        return (bool) $statement->fetchColumn();
+    }
+
     public function update(int $id, string $name): void
     {
         $statement = Database::connection()->prepare(

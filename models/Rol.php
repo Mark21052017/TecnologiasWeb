@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 final class Rol
 {
+    private const PROTECTED_ADMIN_ROLE_ID = 1;
+
     public function all(): array
     {
         return Database::connection()
@@ -32,6 +34,10 @@ final class Rol
 
     public function update(int $id, string $name): void
     {
+        if ($this->isProtectedAdminRole($id)) {
+            throw new RuntimeException('El rol administrador esta protegido y no puede modificarse.');
+        }
+
         $statement = Database::connection()->prepare(
             'UPDATE roles SET nombre_rol = :nombre_rol WHERE id_rol = :id_rol'
         );
@@ -43,9 +49,27 @@ final class Rol
 
     public function delete(int $id): void
     {
+        if ($this->isProtectedAdminRole($id)) {
+            throw new RuntimeException('El rol administrador esta protegido y no puede eliminarse.');
+        }
+
         $statement = Database::connection()->prepare(
             'DELETE FROM roles WHERE id_rol = :id_rol'
         );
         $statement->execute(['id_rol' => $id]);
+    }
+
+    public function isProtectedAdminRole(int $id): bool
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT 1 FROM roles WHERE id_rol = :id_rol AND (id_rol = :protected_id OR nombre_rol = :admin_name) LIMIT 1'
+        );
+        $statement->execute([
+            'id_rol' => $id,
+            'protected_id' => self::PROTECTED_ADMIN_ROLE_ID,
+            'admin_name' => 'administrador',
+        ]);
+
+        return (bool) $statement->fetchColumn();
     }
 }

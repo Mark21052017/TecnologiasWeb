@@ -13,6 +13,11 @@ if (!$role) {
     exit('Rol no encontrado.');
 }
 
+if ($controller->isProtectedAdminRole((int) $role['id_rol'])) {
+    http_response_code(403);
+    exit('El rol administrador esta protegido y no puede modificarse.');
+}
+
 $data = $role;
 $errors = [];
 

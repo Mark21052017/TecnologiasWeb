@@ -34,8 +34,8 @@ function validation_text(string $value, string $label, int $maxLength): ?string
 
 function validation_username(string $value): ?string
 {
-    if (!preg_match('/^[A-Za-z0-9._-]{4,50}$/', $value)) {
-        return 'El usuario debe tener entre 4 y 50 caracteres y solo usar letras, numeros, punto, guion o guion bajo.';
+    if (!preg_match('/^(?=.*[A-Za-z])[A-Za-z0-9._-]{4,50}$/', $value)) {
+        return 'El usuario debe tener entre 4 y 50 caracteres, incluir al menos una letra y solo usar letras, numeros, punto, guion o guion bajo.';
     }
 
     return null;

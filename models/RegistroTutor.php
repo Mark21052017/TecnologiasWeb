@@ -31,11 +31,21 @@ final class RegistroTutor
                 'telefono' => $data['telefono'] !== '' ? $data['telefono'] : null,
             ]);
 
+            $userId = (int) $pdo->lastInsertId();
             $profileStatement = $pdo->prepare(
                 'INSERT INTO tutores (id_usuario, especialidad, biografia) VALUES (:id_usuario, :especialidad, :biografia)'
             );
             $profileStatement->execute([
-                'id_usuario' => (int) $pdo->lastInsertId(),
+                'id_usuario' => $userId,
+                'especialidad' => $data['especialidad'],
+                'biografia' => $data['biografia'] !== '' ? $data['biografia'] : null,
+            ]);
+            $requestStatement = $pdo->prepare(
+                'INSERT INTO solicitudes_tutor (id_usuario, especialidad, biografia)
+                 VALUES (:id_usuario, :especialidad, :biografia)'
+            );
+            $requestStatement->execute([
+                'id_usuario' => $userId,
                 'especialidad' => $data['especialidad'],
                 'biografia' => $data['biografia'] !== '' ? $data['biografia'] : null,
             ]);

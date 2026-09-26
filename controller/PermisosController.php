@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 final class PermisosController
 {
+    private const ROLES = ['administrador', 'tutor', 'estudiante'];
+
     private Permiso $model;
 
     public function __construct()
@@ -11,43 +13,41 @@ final class PermisosController
         $this->model = new Permiso();
     }
 
-    public function data(?int $roleId, ?int $userId): array
+    public function data(?string $roleName): array
     {
         $roles = $this->model->roles();
-        $users = $this->model->users();
-        $roleId = $roleId ?: (int) ($roles[0]['id_rol'] ?? 0);
-        $userId = $userId ?: (int) ($users[0]['id_usuario'] ?? 0);
+        $selectedRole = $this->isSupportedRole($roleName) ? $roleName : 'administrador';
 
         return [
             'modules' => $this->model->modules(),
             'roles' => $roles,
-            'users' => $users,
-            'role_id' => $roleId,
-            'user_id' => $userId,
-            'role_matrix' => $roleId ? $this->model->roleMatrix($roleId) : [],
-            'user_matrix' => $userId ? $this->model->userMatrix($userId) : [],
+            'role_name' => $selectedRole,
+            'role_matrix' => $this->model->roleMatrix($selectedRole),
         ];
     }
 
-    public function saveRole(int $roleId, array $input): ?string
+    public function isSupportedRole(?string $roleName): bool
     {
+        return is_string($roleName) && in_array($roleName, self::ROLES, true);
+    }
+
+    public function saveRole(?string $roleName, array $input): ?string
+    {
+        if (!$this->isSupportedRole($roleName)) {
+            return 'Rol no valido.';
+        }
+        if ($roleName === 'administrador') {
+            return 'Los permisos del rol administrador estan protegidos.';
+        }
+
         try {
-            (new Permiso())->saveRolePermissions($roleId, $input['permiso'] ?? []);
+            $this->model->saveRolePermissions($roleName, $input['permiso'] ?? []);
             return null;
+        } catch (InvalidArgumentException | RuntimeException $exception) {
+            return $exception->getMessage();
         } catch (Throwable $exception) {
             error_log($exception->getMessage());
             return 'No fue posible guardar los permisos del rol.';
-        }
-    }
-
-    public function saveUser(int $userId, array $input): ?string
-    {
-        try {
-            (new Permiso())->saveUserPermissions($userId, $input['permiso'] ?? []);
-            return null;
-        } catch (Throwable $exception) {
-            error_log($exception->getMessage());
-            return 'No fue posible guardar los permisos del usuario.';
         }
     }
 }

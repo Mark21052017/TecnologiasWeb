@@ -22,7 +22,7 @@
     </div>
 
     <div class="table-wrapper card">
-        <table>
+        <table class="table table-hover align-middle mb-0">
             <thead><tr><th>ID</th><th>Materia</th><th>Carrera</th><th>Acciones</th></tr></thead>
             <tbody>
                 <?php foreach ($materias as $subject): ?>
@@ -31,11 +31,11 @@
                         <td><?= e($subject['nombre_materia']) ?></td>
                         <td><?= e($subject['nombre_carrera'] ?? 'Sin carrera') ?></td>
                         <td class="actions">
-                            <a href="<?= e(app_url('materias/edit.php?id=' . (int) $subject['id_materia'])) ?>">Editar</a>
+                            <a class="icon-action" href="<?= e(app_url('materias/edit.php?id=' . (int) $subject['id_materia'])) ?>" title="Editar materia" aria-label="Editar materia"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar materia</span></a>
                             <form method="post" action="<?= e(app_url('materias/delete.php')) ?>" onsubmit="return confirm('Eliminar esta materia?');">
                                 <input type="hidden" name="id" value="<?= (int) $subject['id_materia'] ?>">
                                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                                <button class="link-button" type="submit">Eliminar</button>
+                                <button class="link-button icon-action icon-action-danger" type="submit" title="Eliminar materia" aria-label="Eliminar materia"><i class="bi bi-trash3" aria-hidden="true"></i><span class="visually-hidden">Eliminar materia</span></button>
                             </form>
                         </td>
                     </tr>

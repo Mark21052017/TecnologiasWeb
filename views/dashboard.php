@@ -42,7 +42,7 @@ $statValues = [
             <strong class="stat-value"><?= $statValues['total_estudiantes'] ?></strong>
         </article>
     </section><?php elseif ($role === 'tutor'): ?><section class="stat-grid" aria-label="Resumen del tutor">
-        <article class="stat-card"><div class="stat-card-top"><span class="stat-label">Mis materias</span><span class="stat-icon">MA</span></div><strong class="stat-value"><?= (int) ($stats['materias_asignadas'] ?? 0) ?></strong></article>
+        <article class="stat-card"><div class="stat-card-top"><span class="stat-label">Materias seleccionadas</span><span class="stat-icon">MA</span></div><strong class="stat-value"><?= (int) ($stats['materias_asignadas'] ?? 0) ?></strong></article>
         <article class="stat-card"><div class="stat-card-top"><span class="stat-label">Pendientes</span><span class="stat-icon">PE</span></div><strong class="stat-value"><?= (int) ($stats['tutorias_pendientes'] ?? 0) ?></strong></article>
         <article class="stat-card"><div class="stat-card-top"><span class="stat-label">Confirmadas</span><span class="stat-icon">CO</span></div><strong class="stat-value"><?= (int) ($stats['tutorias_confirmadas'] ?? 0) ?></strong></article>
         <article class="stat-card"><div class="stat-card-top"><span class="stat-label">Mi promedio</span><span class="stat-icon">EV</span></div><strong class="stat-value"><?= e(number_format((float) ($stats['promedio_calificacion'] ?? 0), 2)) ?>/5</strong></article>
@@ -54,7 +54,7 @@ $statValues = [
     </section><?php endif; ?>
 
     <?php if ($role === 'administrador'): ?><section class="quick-grid">
-        <article class="card">
+        <article class="card shadow-sm border-0">
             <div class="section-heading">
                 <h2>Catalogo academico</h2>
                 <?php if (($user['nombre_rol'] ?? '') === 'administrador'): ?>
@@ -67,7 +67,7 @@ $statValues = [
             </ul>
         </article>
 
-        <article class="card">
+        <article class="card shadow-sm border-0">
             <div class="section-heading">
                 <h2>Tutorias</h2>
                 <span class="eyebrow">Estado</span>
@@ -80,9 +80,9 @@ $statValues = [
     </section><?php endif; ?>
 
     <?php if ($role === 'tutor'): ?><section class="card dashboard-actions"><div class="section-heading"><h2>Operacion del tutor</h2><span class="eyebrow">Mi espacio</span></div><div class="quick-links">
-        <a href="<?= e(app_url('mis-materias/')) ?>"><span>MA</span><strong>Mis materias</strong><small>Gestionar asignaturas</small></a>
-        <a href="<?= e(app_url('disponibilidad/')) ?>"><span>DI</span><strong>Disponibilidad</strong><small>Definir horarios</small></a>
-        <a href="<?= e(app_url('tutorias/')) ?>"><span>TI</span><strong>Tutorias</strong><small>Atender solicitudes</small></a>
+        <a href="<?= e(app_url('materias-ofertadas/')) ?>"><span>MO</span><strong>Materias ofertadas</strong><small>Seleccionar materias para impartir</small></a>
+        <a href="<?= e(app_url('disponibilidad/')) ?>"><span>DI</span><strong>Disponibilidad</strong><small>Elegir turnos asignados</small></a>
+        <a href="<?= e(app_url('tutorias/')) ?>"><span>TI</span><strong>Tutorias</strong><small>Gestionar sesiones</small></a>
         <a href="<?= e(app_url('evaluaciones/')) ?>"><span>EV</span><strong>Evaluaciones</strong><small>Revisar opiniones</small></a>
     </div></section><?php endif; ?>
 
@@ -97,9 +97,12 @@ $statValues = [
                 <a href="<?= e(app_url('roles/')) ?>"><span>RO</span><strong>Roles</strong><small>Permisos del sistema</small></a>
                 <a href="<?= e(app_url('carreras/')) ?>"><span>CA</span><strong>Carreras</strong><small>Catalogo academico</small></a>
                 <a href="<?= e(app_url('materias/')) ?>"><span>MA</span><strong>Materias</strong><small>Asignaturas disponibles</small></a>
+                <a href="<?= e(app_url('periodos/')) ?>"><span>PE</span><strong>Periodos</strong><small>Fechas de tutorias</small></a>
+                <a href="<?= e(app_url('ofertas/')) ?>"><span>OF</span><strong>Ofertas</strong><small>Publicar materias</small></a>
+                <a href="<?= e(app_url('solicitudes-tutor/')) ?>"><span>ST</span><strong>Solicitudes</strong><small>Aprobar tutores</small></a>
+                <a href="<?= e(app_url('inscripciones/')) ?>"><span>IN</span><strong>Inscripciones</strong><small>Ver estudiantes inscritos</small></a>
                 <a href="<?= e(app_url('estudiantes/')) ?>"><span>ES</span><strong>Estudiantes</strong><small>Perfiles academicos</small></a>
                 <a href="<?= e(app_url('tutores/')) ?>"><span>TU</span><strong>Tutores</strong><small>Perfiles profesionales</small></a>
-                <a href="<?= e(app_url('asignaciones/')) ?>"><span>AS</span><strong>Asignaciones</strong><small>Materias por tutor</small></a>
                 <a href="<?= e(app_url('accesos/')) ?>"><span>LG</span><strong>Accesos</strong><small>Auditoria del sistema</small></a>
                 <a href="<?= e(app_url('permisos/')) ?>"><span>PE</span><strong>Permisos</strong><small>Acceso por usuario y rol</small></a>
             </div>
@@ -110,9 +113,8 @@ $statValues = [
             <div class="section-heading"><h2>Explorar apoyo academico</h2><span class="eyebrow">Mi espacio</span></div>
             <div class="quick-links">
                 <a href="<?= e(app_url('materias-disponibles/')) ?>"><span>MA</span><strong>Materias</strong><small>Ver asignaturas disponibles</small></a>
-                <a href="<?= e(app_url('tutores-disponibles/')) ?>"><span>TU</span><strong>Tutores</strong><small>Conocer tutores activos</small></a>
-                <a href="<?= e(app_url('horarios-disponibles/')) ?>"><span>HO</span><strong>Horarios</strong><small>Consultar disponibilidad</small></a>
-                <a href="<?= e(app_url('tutorias/create.php')) ?>"><span>TI</span><strong>Solicitar</strong><small>Crear una tutoria</small></a>
+                <a href="<?= e(app_url('tutorias/')) ?>"><span>TI</span><strong>Mis tutorias</strong><small>Consultar inscripciones</small></a>
+                <a href="<?= e(app_url('evaluaciones/')) ?>"><span>EV</span><strong>Evaluaciones</strong><small>Ver mis resultados</small></a>
             </div>
         </section>
     <?php endif; ?>

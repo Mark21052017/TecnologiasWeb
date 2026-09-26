@@ -2,17 +2,22 @@
 
 require dirname(__DIR__, 2) . '/includes/bootstrap.php';
 Auth::requireRole('tutor');
-Auth::requireModule('asignaciones');
-$title = 'Mis materias';
-$activePage = 'mis-materias';
+Auth::requireModule('ofertas');
+$requestPath = (string) (parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '');
+if (preg_match('#/mis-materias/?$#', $requestPath)) {
+    header('Location: ' . app_url('materias-ofertadas/'), true, 302);
+    exit;
+}
+$title = 'Materias ofertadas';
+$activePage = 'materias-ofertadas';
 $user = Auth::user();
-$controller = new TutorPortalController();
 $userId = (int) $user['id_usuario'];
-$subjects = $controller->subjects($userId);
-$availableSubjects = $controller->availableSubjects($userId);
+$controller = new OfertasController();
+$subjects = $controller->tutorOffers($userId);
+$availableSubjects = $controller->availableForTutor($userId);
 $messages = [
-    'subject-added' => 'Materia agregada correctamente.',
-    'subject-removed' => 'Materia quitada correctamente.',
+    'added' => 'Materia seleccionada correctamente. Ya puedes configurar tu disponibilidad.',
+    'saved' => 'Disponibilidad para la oferta actualizada correctamente.',
 ];
 $message = $messages[$_GET['message'] ?? ''] ?? null;
 $error = isset($_GET['error']) && is_string($_GET['error']) ? $_GET['error'] : null;

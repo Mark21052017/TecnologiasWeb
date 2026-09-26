@@ -26,6 +26,11 @@ final class UsuariosController
         return $this->model->findById($id);
     }
 
+    public function isProtectedAdmin(int $id): bool
+    {
+        return $this->model->isProtectedAdmin($id);
+    }
+
     public function store(array $input): array
     {
         $data = $this->normalize($input);
@@ -47,6 +52,9 @@ final class UsuariosController
     public function update(int $id, array $input): array
     {
         $data = $this->normalize($input);
+        if ($this->isProtectedAdmin($id)) {
+            return [$data, ['La cuenta admin esta protegida y no puede modificarse.']];
+        }
         $errors = $this->validate($data, true);
 
         if ($errors) {
@@ -56,6 +64,8 @@ final class UsuariosController
         try {
             $this->model->update($id, $data);
             return [$data, []];
+        } catch (RuntimeException $exception) {
+            return [$data, [$exception->getMessage()]];
         } catch (PDOException $exception) {
             error_log($exception->getMessage());
             return [$data, ['El correo o el usuario ya pueden estar registrados.']];
@@ -64,6 +74,10 @@ final class UsuariosController
 
     public function deactivate(int $id): ?string
     {
+        if ($this->isProtectedAdmin($id)) {
+            return 'La cuenta admin esta protegida y no puede desactivarse.';
+        }
+
         $currentUser = Auth::user();
         if ((int) ($currentUser['id_usuario'] ?? 0) === $id) {
             return 'No puede desactivar su propia cuenta.';
@@ -79,6 +93,10 @@ final class UsuariosController
 
     public function activate(int $id): ?string
     {
+        if ($this->isProtectedAdmin($id)) {
+            return 'La cuenta admin esta protegida y no puede modificarse.';
+        }
+
         try {
             return $this->model->activate($id) ? null : 'La cuenta ya estaba activa o no existe.';
         } catch (PDOException $exception) {

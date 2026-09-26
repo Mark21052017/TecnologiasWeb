@@ -22,7 +22,7 @@
     </div>
 
     <div class="table-wrapper card">
-        <table>
+        <table class="table table-hover align-middle mb-0">
             <thead><tr><th>Estudiante</th><th>Correo</th><th>Carrera</th><th>Semestre</th><th>Registro</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>
                 <?php foreach ($students as $student): ?>
@@ -34,11 +34,11 @@
                         <td><?= e($student['registro_universitario'] ?: 'Sin registro') ?></td>
                         <td><span class="status status-<?= e($student['estado']) ?>"><?= e($student['estado']) ?></span></td>
                         <td class="actions">
-                            <a href="<?= e(app_url('estudiantes/edit.php?id=' . (int) $student['id_estudiante'])) ?>">Editar</a>
+                            <a class="icon-action" href="<?= e(app_url('estudiantes/edit.php?id=' . (int) $student['id_estudiante'])) ?>" title="Editar estudiante" aria-label="Editar estudiante"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar estudiante</span></a>
                             <form method="post" action="<?= e(app_url('estudiantes/delete.php')) ?>" onsubmit="return confirm('Eliminar este perfil?');">
                                 <input type="hidden" name="id" value="<?= (int) $student['id_estudiante'] ?>">
                                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                                <button class="link-button" type="submit">Eliminar</button>
+                                <button class="link-button icon-action icon-action-danger" type="submit" title="Eliminar estudiante" aria-label="Eliminar estudiante"><i class="bi bi-trash3" aria-hidden="true"></i><span class="visually-hidden">Eliminar estudiante</span></button>
                             </form>
                         </td>
                     </tr>

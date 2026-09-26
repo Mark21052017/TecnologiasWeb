@@ -2,17 +2,14 @@
 
 require dirname(__DIR__, 2) . '/includes/bootstrap.php';
 Auth::requireAnyRole(['administrador', 'tutor']);
-Auth::requireModule('disponibilidad');
+if ((Auth::user()['nombre_rol'] ?? '') === 'administrador') {
+    header('Location: ' . app_url('turnos/'), true, 303);
+    exit;
+}
+Auth::requireModule('ofertas');
 $title = 'Disponibilidad';
 $activePage = 'disponibilidad';
-$user = Auth::user();
-$controller = new DisponibilidadController();
-$isAdmin = ($user['nombre_rol'] ?? '') === 'administrador';
-$tutorId = $isAdmin ? null : (new Tutor())->findIdByUserId((int) $user['id_usuario']);
-$availability = $controller->index($tutorId);
-$tutors = $isAdmin ? $controller->tutors() : [];
-$messages = ['created' => 'Horario creado correctamente.', 'updated' => 'Horario actualizado correctamente.', 'deleted' => 'Horario eliminado correctamente.'];
-$message = $messages[$_GET['message'] ?? ''] ?? null;
-$error = isset($_GET['error']) && is_string($_GET['error']) ? $_GET['error'] : null;
-
+$subjects = (new OfertasController())->tutorOffers((int) Auth::user()['id_usuario']);
+$message = (string) ($_GET['message'] ?? '') === 'saved' ? 'Disponibilidad actualizada correctamente.' : null;
+$error = (string) ($_GET['error'] ?? '');
 require dirname(__DIR__, 2) . '/views/disponibilidad/index.php';

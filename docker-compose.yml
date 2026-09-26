@@ -1,0 +1,43 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: tecnologiasweb-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-testdb}
+      MYSQL_USER: ${DB_USER:-biblioteca_user}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:?Define MYSQL_APP_PASSWORD en .env.docker}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Define MYSQL_ROOT_PASSWORD en .env.docker}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tecnologiasweb-web
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_URL: ${APP_URL:-}
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-testdb}
+      DB_USER: ${DB_USER:-biblioteca_user}
+      DB_PASSWORD: ${MYSQL_APP_PASSWORD:?Define MYSQL_APP_PASSWORD en .env.docker}
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mysql_data:

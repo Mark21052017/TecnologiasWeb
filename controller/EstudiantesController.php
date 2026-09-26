@@ -42,7 +42,7 @@ final class EstudiantesController
             return [$data, []];
         } catch (PDOException $exception) {
             error_log($exception->getMessage());
-            return [$data, ['El usuario ya tiene un perfil o el registro universitario ya existe.']];
+            return [$data, ['El usuario ya tiene un perfil o no se pudo guardar el estudiante.']];
         }
     }
 
@@ -60,7 +60,7 @@ final class EstudiantesController
             return [$data, []];
         } catch (PDOException $exception) {
             error_log($exception->getMessage());
-            return [$data, ['El usuario ya tiene un perfil o el registro universitario ya existe.']];
+            return [$data, ['El usuario ya tiene un perfil o no se pudo actualizar el estudiante.']];
         }
     }
 
@@ -81,7 +81,6 @@ final class EstudiantesController
             'id_usuario' => trim((string) ($input['id_usuario'] ?? '')),
             'id_carrera' => trim((string) ($input['id_carrera'] ?? '')),
             'semestre' => trim((string) ($input['semestre'] ?? '')),
-            'registro_universitario' => trim((string) ($input['registro_universitario'] ?? '')),
         ];
     }
 
@@ -103,11 +102,6 @@ final class EstudiantesController
         if ($semester === false || $semester < 1 || $semester > 20) {
             $errors[] = 'El semestre debe estar entre 1 y 20.';
         }
-        $registrationError = validation_code($data['registro_universitario'], 'registro universitario', 30);
-        if ($registrationError !== null) {
-            $errors[] = $registrationError;
-        }
-
         return $errors;
     }
 }

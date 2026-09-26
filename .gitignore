@@ -7,4 +7,11 @@ node_modules/
 .DS_Store
 storage/logs/*
 !storage/logs/.gitkeep
+storage/profile-images/*
+!storage/profile-images/.gitkeep
+
+# Local Docker credentials and database backups.
+.env.docker
+docker/mysql/init/*.sql
+!docker/mysql/init/.gitkeep
 

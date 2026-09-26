@@ -6,24 +6,29 @@ $activePage = 'usuarios';
 
 $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 $controller = new UsuariosController();
-$user = $id ? $controller->find($id) : null;
+$account = $id ? $controller->find($id) : null;
 
-if (!$user) {
+if (!$account) {
     http_response_code(404);
     exit('Usuario no encontrado.');
 }
 
+if ($controller->isProtectedAdmin((int) $account['id_usuario'])) {
+    http_response_code(403);
+    exit('La cuenta admin esta protegida y no puede modificarse.');
+}
+
 $roles = $controller->roles();
 $data = [
-    'id_usuario' => $user['id_usuario'],
-    'id_rol' => (string) $user['id_rol'],
-    'nombre' => $user['nombre'],
-    'apellido' => $user['apellido'],
-    'correo' => $user['correo'],
-    'usuario' => $user['usuario'],
+    'id_usuario' => $account['id_usuario'],
+    'id_rol' => (string) $account['id_rol'],
+    'nombre' => $account['nombre'],
+    'apellido' => $account['apellido'],
+    'correo' => $account['correo'],
+    'usuario' => $account['usuario'],
     'contrasena' => '',
-    'telefono' => $user['telefono'] ?? '',
-    'estado' => $user['estado'],
+    'telefono' => $account['telefono'] ?? '',
+    'estado' => $account['estado'],
 ];
 $errors = [];
 

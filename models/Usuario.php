@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 final class Usuario
 {
+    private const PROTECTED_ADMIN_ID = 1;
+    private const PROTECTED_ADMIN_USERNAME = 'admin';
+
     public function all(): array
     {
         $statement = Database::connection()->query(
-            'SELECT u.id_usuario, u.id_rol, u.nombre, u.apellido, u.correo, u.usuario, u.telefono, u.estado, u.fecha_registro, r.nombre_rol, (SELECT e.id_estudiante FROM estudiantes e WHERE e.id_usuario = u.id_usuario LIMIT 1) AS id_estudiante, (SELECT t.id_tutor FROM tutores t WHERE t.id_usuario = u.id_usuario LIMIT 1) AS id_tutor FROM usuarios u INNER JOIN roles r ON r.id_rol = u.id_rol ORDER BY u.id_usuario DESC'
+            "SELECT u.id_usuario, u.id_rol, u.nombre, u.apellido, u.correo, u.usuario, u.telefono, u.estado, u.fecha_registro, r.nombre_rol,
+                    CASE WHEN r.nombre_rol = 'administrador' AND (u.id_usuario = 1 OR u.usuario = 'admin') THEN 1 ELSE 0 END AS es_admin_protegido,
+                    (SELECT e.id_estudiante FROM estudiantes e WHERE e.id_usuario = u.id_usuario LIMIT 1) AS id_estudiante,
+                    (SELECT t.id_tutor FROM tutores t WHERE t.id_usuario = u.id_usuario LIMIT 1) AS id_tutor
+             FROM usuarios u INNER JOIN roles r ON r.id_rol = u.id_rol ORDER BY u.id_usuario DESC"
         );
 
         return $statement->fetchAll();
@@ -52,6 +59,10 @@ final class Usuario
 
     public function update(int $id, array $data): void
     {
+        if ($this->isProtectedAdmin($id)) {
+            throw new RuntimeException('La cuenta admin esta protegida y no puede modificarse.');
+        }
+
         $fields = [
             'id_rol' => $data['id_rol'],
             'nombre' => $data['nombre'],
@@ -76,6 +87,10 @@ final class Usuario
 
     public function deactivate(int $id): bool
     {
+        if ($this->isProtectedAdmin($id)) {
+            return false;
+        }
+
         $statement = Database::connection()->prepare(
             "UPDATE usuarios SET estado = 'inactivo' WHERE id_usuario = :id_usuario AND estado = 'activo'"
         );
@@ -86,12 +101,37 @@ final class Usuario
 
     public function activate(int $id): bool
     {
+        if ($this->isProtectedAdmin($id)) {
+            return false;
+        }
+
         $statement = Database::connection()->prepare(
             "UPDATE usuarios SET estado = 'activo' WHERE id_usuario = :id_usuario AND estado IN ('pendiente', 'inactivo')"
         );
         $statement->execute(['id_usuario' => $id]);
 
+        $request = Database::connection()->prepare(
+            "UPDATE solicitudes_tutor SET estado = 'aprobada', fecha_revision = CURRENT_TIMESTAMP
+             WHERE id_usuario = :id_usuario AND estado = 'pendiente'"
+        );
+        $request->execute(['id_usuario' => $id]);
+
         return $statement->rowCount() > 0;
+    }
+
+    public function isProtectedAdmin(int $id): bool
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT 1 FROM usuarios u INNER JOIN roles r ON r.id_rol = u.id_rol WHERE u.id_usuario = :id_usuario AND r.nombre_rol = :rol AND (u.id_usuario = :protected_id OR u.usuario = :protected_username) LIMIT 1'
+        );
+        $statement->execute([
+            'id_usuario' => $id,
+            'rol' => 'administrador',
+            'protected_id' => self::PROTECTED_ADMIN_ID,
+            'protected_username' => self::PROTECTED_ADMIN_USERNAME,
+        ]);
+
+        return (bool) $statement->fetchColumn();
     }
 
     public function findForLogin(string $username): ?array
@@ -105,6 +145,7 @@ final class Usuario
                 u.correo,
                 u.usuario,
                 u.contrasena_hash,
+                u.foto_perfil,
                 u.estado,
                 r.nombre_rol
             FROM usuarios u

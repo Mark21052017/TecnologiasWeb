@@ -7,11 +7,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf_token($_POST['csrf_tok
     http_response_code(400);
     exit('Solicitud no valida.');
 }
-$roleId = filter_var($_POST['id_rol'] ?? null, FILTER_VALIDATE_INT);
-if (!$roleId) {
-    header('Location: ' . app_url('permisos/?error=Rol no valido.'));
+$roleName = isset($_POST['rol']) && is_string($_POST['rol']) ? trim($_POST['rol']) : null;
+if (!$roleName) {
+    header('Location: ' . app_url('permisos/?error=' . rawurlencode('Rol no valido.')), true, 303);
     exit;
 }
-$error = (new PermisosController())->saveRole($roleId, $_POST);
-header('Location: ' . app_url('permisos/?rol=' . $roleId . '&usuario=' . (int) ($_POST['id_usuario'] ?? 0) . ($error ? '&error=' . rawurlencode($error) : '&message=saved')));
+$error = (new PermisosController())->saveRole($roleName, $_POST);
+$query = 'rol=' . rawurlencode($roleName) . ($error ? '&error=' . rawurlencode($error) : '&message=saved');
+header('Location: ' . app_url('permisos/?' . $query), true, 303);
 exit;

@@ -22,7 +22,7 @@
     </div>
 
     <div class="table-wrapper card">
-        <table>
+        <table class="table table-hover align-middle mb-0">
             <thead><tr><th>Tutor</th><th>Correo</th><th>Especialidad</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>
                 <?php foreach ($tutors as $tutor): ?>
@@ -32,11 +32,11 @@
                         <td><?= e($tutor['especialidad'] ?: 'Sin especialidad') ?></td>
                         <td><span class="status status-<?= e($tutor['estado']) ?>"><?= e($tutor['estado']) ?></span></td>
                         <td class="actions">
-                            <a href="<?= e(app_url('tutores/edit.php?id=' . (int) $tutor['id_tutor'])) ?>">Editar</a>
+                            <a class="icon-action" href="<?= e(app_url('tutores/edit.php?id=' . (int) $tutor['id_tutor'])) ?>" title="Editar tutor" aria-label="Editar tutor"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar tutor</span></a>
                             <form method="post" action="<?= e(app_url('tutores/delete.php')) ?>" onsubmit="return confirm('Eliminar este perfil?');">
                                 <input type="hidden" name="id" value="<?= (int) $tutor['id_tutor'] ?>">
                                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                                <button class="link-button" type="submit">Eliminar</button>
+                                <button class="link-button icon-action icon-action-danger" type="submit" title="Eliminar tutor" aria-label="Eliminar tutor"><i class="bi bi-trash3" aria-hidden="true"></i><span class="visually-hidden">Eliminar tutor</span></button>
                             </form>
                         </td>
                     </tr>

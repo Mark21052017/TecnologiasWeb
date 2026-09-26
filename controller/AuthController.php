@@ -34,7 +34,10 @@ final class AuthController
 
             $model->registerAccess((int) $user['id_usuario'], 'exitoso');
             Auth::login($user);
-            header('Location: ' . app_url('dashboard.php'));
+            $destination = in_array($user['nombre_rol'] ?? '', ['coordinador_mg', 'auxiliar_mg'], true)
+                ? app_url('modalidades-grado/')
+                : app_url('dashboard.php');
+            header('Location: ' . $destination, true, 303);
             exit;
         } catch (Throwable $exception) {
             error_log($exception->getMessage());

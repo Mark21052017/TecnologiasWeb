@@ -50,6 +50,21 @@ final class Materia
         ]);
     }
 
+    public function nameExists(string $name, ?int $excludeId = null): bool
+    {
+        $sql = 'SELECT 1 FROM materias WHERE nombre_materia_clave = LOWER(TRIM(:nombre_materia))';
+        $params = ['nombre_materia' => $name];
+        if ($excludeId !== null) {
+            $sql .= ' AND id_materia <> :exclude_id';
+            $params['exclude_id'] = $excludeId;
+        }
+        $sql .= ' LIMIT 1';
+        $statement = Database::connection()->prepare($sql);
+        $statement->execute($params);
+
+        return (bool) $statement->fetchColumn();
+    }
+
     public function update(int $id, string $name, ?int $careerId): void
     {
         $statement = Database::connection()->prepare(
