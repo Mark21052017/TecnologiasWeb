@@ -12,3 +12,5 @@ WORKDIR /var/www/html
 COPY . /var/www/html
 
 RUN chown -R www-data:www-data /var/www/html
+
+CMD ["sh", "-c", "if [ -n \"$RAILWAY_SERVICE_ID\" ]; then mkdir -p /var/www/html/storage/profile-images /var/www/html/storage/mg-academic-imports /var/www/html/storage/mg-reports /var/www/html/storage/sessions && chown -R www-data:www-data /var/www/html/storage; fi; exec apache2-foreground"]

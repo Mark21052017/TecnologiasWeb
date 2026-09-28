@@ -112,10 +112,24 @@ require_once dirname(__DIR__) . '/controller/MgDefensasController.php';
 
 require_once __DIR__ . '/permisos.php';
 
+$sessionSavePath = trim((string) (getenv('SESSION_SAVE_PATH') ?: ''));
+if ($sessionSavePath !== '') {
+    if (!is_dir($sessionSavePath) && !mkdir($sessionSavePath, 0770, true) && !is_dir($sessionSavePath)) {
+        throw new RuntimeException('No fue posible preparar el almacenamiento de sesiones.');
+    }
+    if (!is_writable($sessionSavePath)) {
+        throw new RuntimeException('El almacenamiento de sesiones no tiene permisos de escritura.');
+    }
+    session_save_path($sessionSavePath);
+}
+
 if (session_status() !== PHP_SESSION_ACTIVE) {
+    $secureCookie = (getenv('APP_ENV') ?: '') === 'production'
+        || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
     session_set_cookie_params([
         'httponly' => true,
-        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'secure' => $secureCookie,
         'samesite' => 'Lax',
     ]);
     session_start();
