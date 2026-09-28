@@ -1,7 +1,6 @@
 FROM php:8.5-apache
 
-RUN a2dismod mpm_event 2>/dev/null || true \
-    && a2dismod mpm_worker 2>/dev/null || true \
+RUN rm -f /etc/apache2/mods-enabled/mpm_*.load /etc/apache2/mods-enabled/mpm_*.conf \
     && a2enmod mpm_prefork headers \
     && docker-php-ext-install pdo_mysql
 
@@ -15,4 +14,4 @@ COPY . /var/www/html
 
 RUN chown -R www-data:www-data /var/www/html
 
-CMD ["sh", "-c", "if [ -n \"$RAILWAY_SERVICE_ID\" ]; then mkdir -p /var/www/html/storage/profile-images /var/www/html/storage/mg-academic-imports /var/www/html/storage/mg-reports /var/www/html/storage/sessions && chown -R www-data:www-data /var/www/html/storage; fi; exec apache2-foreground"]
+CMD ["sh", "-c", "if [ -n \"$RAILWAY_SERVICE_ID\" ]; then mkdir -p /var/www/html/storage/profile-images /var/www/html/storage/mg-academic-imports /var/www/html/storage/mg-reports /var/www/html/storage/sessions && chown -R www-data:www-data /var/www/html/storage; fi; rm -f /etc/apache2/mods-enabled/mpm_*.load /etc/apache2/mods-enabled/mpm_*.conf; a2enmod mpm_prefork; exec apache2-foreground"]
