@@ -3,6 +3,7 @@
     <div class="page-heading"><div><span class="hero-kicker">Configuración MG</span><h1>Cohortes</h1><p>Una cohorte inactiva conserva sus expedientes e hitos; no se elimina.</p></div><a class="btn btn-outline-secondary" href="<?= e(app_url('modalidades-grado/')) ?>">Volver a MG</a></div>
     <?php if ($message): ?><p class="success" role="status"><?= e($message) ?></p><?php endif; ?>
     <?php if ($errors): ?><div class="alert" role="alert"><ul><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div><?php endif; ?>
+    <?php if (Auth::user()['nombre_rol'] === 'administrador'): ?><section class="card mg-panel"><h2>Estudiantes y trabajos de cohorte</h2><p>Formaliza solicitudes habilitadas y asigna tutores a trabajos activos desde las tareas de cohorte.</p><div class="mg-actions"><a class="btn btn-outline-primary" href="<?= e(app_url('modalidades-grado/inscripciones.php')) ?>">Inscripciones habilitadas</a><a class="btn btn-outline-primary" href="<?= e(app_url('modalidades-grado/asignaciones-tutor.php')) ?>">Asignación de tutores</a></div></section><?php endif; ?>
     <?php if ($canManage): ?>
         <section class="card mg-panel">
             <h2><?= $cohort ? 'Editar cohorte' : 'Crear cohorte' ?></h2>

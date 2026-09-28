@@ -104,7 +104,7 @@ final class PerfilController
         return [];
     }
 
-    public function uploadPhoto(int $userId, array $file, string $storagePath): ?string
+    public function uploadPhoto(int $userId, array $file, string $storagePath, bool $syncSession = true): ?string
     {
         $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
         if ($error === UPLOAD_ERR_NO_FILE) {
@@ -146,12 +146,14 @@ final class PerfilController
             return 'No fue posible asociar la fotografia al perfil.';
         }
         $this->deleteStoredPhoto($storagePath, $profile['foto_perfil'] ?? null);
-        $_SESSION['user']['foto_perfil'] = $filename;
+        if ($syncSession && (int) ($_SESSION['user']['id_usuario'] ?? 0) === $userId) {
+            $_SESSION['user']['foto_perfil'] = $filename;
+        }
 
         return null;
     }
 
-    public function removePhoto(int $userId, string $storagePath): ?string
+    public function removePhoto(int $userId, string $storagePath, bool $syncSession = true): ?string
     {
         $profile = $this->model->findByUserId($userId);
         if (!$profile) {
@@ -165,7 +167,9 @@ final class PerfilController
             return 'No fue posible eliminar la fotografia.';
         }
         $this->deleteStoredPhoto($storagePath, $profile['foto_perfil'] ?? null);
-        $_SESSION['user']['foto_perfil'] = null;
+        if ($syncSession && (int) ($_SESSION['user']['id_usuario'] ?? 0) === $userId) {
+            $_SESSION['user']['foto_perfil'] = null;
+        }
 
         return null;
     }

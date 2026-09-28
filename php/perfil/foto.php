@@ -1,9 +1,25 @@
 <?php
 
 require dirname(__DIR__, 2) . '/includes/bootstrap.php';
-Auth::requireAnyRole(['tutor', 'estudiante']);
+$viewer = Auth::user();
+if (!$viewer) {
+    Auth::requireLogin();
+}
+$viewerRole = (string) ($viewer['nombre_rol'] ?? '');
+if ($viewerRole === 'administrador') {
+    $targetUserId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+    if ($targetUserId === false || $targetUserId === null || $targetUserId < 1) {
+        http_response_code(404);
+        exit;
+    }
+} elseif (in_array($viewerRole, ['tutor', 'estudiante'], true)) {
+    $targetUserId = (int) $viewer['id_usuario'];
+} else {
+    http_response_code(403);
+    exit;
+}
 
-$profile = (new PerfilController())->find((int) Auth::user()['id_usuario']);
+$profile = (new PerfilController())->find((int) $targetUserId);
 $filename = $profile['foto_perfil'] ?? null;
 if (!is_string($filename) || $filename === '' || basename($filename) !== $filename) {
     http_response_code(404);

@@ -22,5 +22,5 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
 $parameters = $controller->parameters();
 $title = 'Parámetros MG';
-$activePage = 'modalidades-grado';
+$activePage = 'mg-configuracion';
 require dirname(__DIR__, 2) . '/views/mg/parametros.php';

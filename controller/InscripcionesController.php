@@ -16,23 +16,26 @@ final class InscripcionesController
         return $this->model->allForViewer($role, $userId);
     }
 
-    public function store(int $studentId, array $input): ?string
+    public function confirmedTutorsForOffers(array $offerIds): array
     {
-        $offerId = filter_var($input['id_oferta'] ?? null, FILTER_VALIDATE_INT);
-        $offerTutorId = filter_var($input['id_oferta_tutor'] ?? null, FILTER_VALIDATE_INT);
-        $scheduleId = filter_var($input['id_oferta_horario'] ?? null, FILTER_VALIDATE_INT);
-        if ($offerId === false || $offerTutorId === false || $scheduleId === false) {
-            return 'Seleccione una oferta, tutor y horario validos.';
-        }
+        return $this->model->confirmedTutorOptions($offerIds);
+    }
 
+    public function assignTutor(array $input): ?string
+    {
+        $enrollmentId = filter_var($input['id_inscripcion'] ?? null, FILTER_VALIDATE_INT);
+        $offerTutorId = filter_var($input['id_oferta_tutor'] ?? null, FILTER_VALIDATE_INT);
+        if ($enrollmentId === false || $enrollmentId < 1 || $offerTutorId === false || $offerTutorId < 1) {
+            return 'Seleccione una inscripción y un tutor válidos.';
+        }
         try {
-            $this->model->create($studentId, $offerId, $offerTutorId, $scheduleId);
+            $this->model->assignTutor((int) $enrollmentId, (int) $offerTutorId);
             return null;
         } catch (RuntimeException $exception) {
             return $exception->getMessage();
         } catch (PDOException $exception) {
             error_log($exception->getMessage());
-            return 'No se pudo registrar la inscripcion.';
+            return 'No se pudo asignar el tutor a la inscripción.';
         }
     }
 

@@ -15,11 +15,16 @@ final class OfertaTutoria
                    o.cupo, o.descripcion, o.estado,
                     p.nombre_periodo, p.fecha_inicio, p.fecha_fin, p.estado AS periodo_estado,
                     o.frecuencia_programacion,
-                    p.inscripcion_inicio, p.inscripcion_fin,
+                     p.inscripcion_inicio, p.inscripcion_fin,
+                    CASE WHEN p.estado = 'publicado' AND CURRENT_DATE BETWEEN p.inscripcion_inicio AND p.inscripcion_fin THEN 1 ELSE 0 END AS inscripciones_abiertas,
                      m.nombre_materia, m.id_carrera, c.nombre_carrera, tt.nombre AS nombre_tipo_tutoria,
-                    (SELECT COUNT(*) FROM oferta_tutoria_fechas otf_count
-                     WHERE otf_count.id_oferta = o.id_oferta AND otf_count.estado = 'activa') AS total_fechas,
-                   COUNT(DISTINCT CASE WHEN i.estado = 'inscrita' THEN i.id_inscripcion END) AS inscritos
+                     (SELECT COUNT(*) FROM oferta_tutoria_fechas otf_count
+                      WHERE otf_count.id_oferta = o.id_oferta AND otf_count.estado = 'activa') AS total_fechas,
+                    COUNT(DISTINCT CASE WHEN i.estado = 'inscrita' THEN i.id_inscripcion END) AS inscritos,
+                    (SELECT COUNT(*) FROM oferta_tutores active_tutor
+                     INNER JOIN tutores active_profile ON active_profile.id_tutor = active_tutor.id_tutor
+                     INNER JOIN usuarios active_user ON active_user.id_usuario = active_profile.id_usuario AND active_user.estado = 'activo'
+                     WHERE active_tutor.id_oferta = o.id_oferta AND active_tutor.estado = 'confirmada') AS tutores_confirmados
             FROM ofertas_tutoria o
             INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
             INNER JOIN materias m ON m.id_materia = o.id_materia
@@ -49,8 +54,8 @@ final class OfertaTutoria
     {
         $sql = $this->baseSelect();
         $sql .= " WHERE o.estado = 'publicada'
-                  AND p.estado = 'publicado'
-                  AND CURRENT_DATE BETWEEN p.inscripcion_inicio AND p.inscripcion_fin
+                  AND p.estado IN ('publicado', 'cerrado')
+                  AND p.fecha_fin >= CURRENT_DATE
                   AND EXISTS (
                       SELECT 1 FROM oferta_tutoria_fechas otf
                       WHERE otf.id_oferta = o.id_oferta
@@ -60,11 +65,13 @@ final class OfertaTutoria
         $offers = Database::connection()->query($sql)->fetchAll();
         $offerIds = array_map('intval', array_column($offers, 'id_oferta'));
         $enrollableByOffer = $this->enrollableRowsForOffers($offerIds);
+        $schedulesByOffer = $this->scheduleRowsForOffers($offerIds);
         $enrolledOfferIds = $studentId !== null ? $this->enrolledOfferIds($studentId, $offerIds) : [];
 
         foreach ($offers as &$offer) {
             $offerId = (int) $offer['id_oferta'];
             $offer['inscribibles'] = $enrollableByOffer[$offerId] ?? [];
+            $offer['horarios_oferta'] = $schedulesByOffer[$offerId] ?? [];
             $offer['inscrito'] = in_array($offerId, $enrolledOfferIds, true);
         }
         unset($offer);
@@ -255,11 +262,74 @@ final class OfertaTutoria
         $pdo = Database::connection();
         $pdo->beginTransaction();
         try {
+            $currentOfferQuery = $pdo->prepare(
+                'SELECT id_periodo, id_materia, id_turno, estado FROM ofertas_tutoria WHERE id_oferta = :id FOR UPDATE'
+            );
+            $currentOfferQuery->execute(['id' => $id]);
+            $currentOffer = $currentOfferQuery->fetch();
+            if (!$currentOffer) {
+                throw new RuntimeException('La oferta no existe.');
+            }
+
             $enrollments = $pdo->prepare("SELECT COUNT(*) FROM inscripciones_tutoria WHERE id_oferta = :id AND estado = 'inscrita'");
             $enrollments->execute(['id' => $id]);
             if ((int) $enrollments->fetchColumn() > 0) {
                 throw new RuntimeException('No se puede modificar una oferta con inscripciones activas.');
             }
+
+            if ($currentOffer['estado'] === 'publicada' && in_array($data['estado'], ['pendiente', 'cancelada', 'finalizada'], true)) {
+                $activeTutor = $pdo->prepare(
+                    "SELECT 1 FROM oferta_tutores
+                     WHERE id_oferta = :id_oferta AND estado IN ('confirmada', 'baja_solicitada')
+                     LIMIT 1 FOR UPDATE"
+                );
+                $activeTutor->execute(['id_oferta' => $id]);
+                if ($activeTutor->fetchColumn()) {
+                    throw new RuntimeException('No se puede retirar o finalizar una oferta mientras tenga un tutor asignado. Gestione primero la baja del tutor.');
+                }
+            }
+
+            $hasTutorCommitment = $pdo->prepare(
+                "SELECT 1 FROM oferta_tutores ot
+                 WHERE ot.id_oferta = :id AND ot.estado IN ('confirmada', 'baja_solicitada')
+                 LIMIT 1 FOR UPDATE"
+            );
+            $hasTutorCommitment->execute(['id' => $id]);
+            $scheduleCommitmentIsLocked = (bool) $hasTutorCommitment->fetchColumn();
+            if ($scheduleCommitmentIsLocked) {
+                $currentSchedulesQuery = $pdo->prepare(
+                    'SELECT dia_semana, id_aula FROM oferta_horarios WHERE id_oferta = :id ORDER BY dia_semana, id_aula'
+                );
+                $currentSchedulesQuery->execute(['id' => $id]);
+                $currentSchedules = $currentSchedulesQuery->fetchAll();
+                $scheduleKeys = static function (array $rows): array {
+                    $keys = array_map(static fn (array $row): string =>
+                        (string) $row['dia_semana'] . '|' . (int) ($row['id_aula'] ?? 0),
+                        $rows
+                    );
+                    sort($keys);
+                    return $keys;
+                };
+
+                $currentDatesQuery = $pdo->prepare(
+                    "SELECT fecha FROM oferta_tutoria_fechas
+                     WHERE id_oferta = :id AND estado = 'activa' ORDER BY fecha"
+                );
+                $currentDatesQuery->execute(['id' => $id]);
+                $currentDates = array_map('strval', $currentDatesQuery->fetchAll(PDO::FETCH_COLUMN));
+                $newDates = array_values(array_unique(array_map('strval', $dates)));
+                sort($newDates);
+
+                $identityChanged = (int) $currentOffer['id_periodo'] !== (int) $data['id_periodo']
+                    || (int) $currentOffer['id_materia'] !== (int) $data['id_materia']
+                    || (int) $currentOffer['id_turno'] !== (int) $data['id_turno'];
+                if ($identityChanged
+                    || $scheduleKeys($currentSchedules) !== $scheduleKeys($schedules)
+                    || $currentDates !== $newDates) {
+                    throw new RuntimeException('No se pueden cambiar el periodo, turno, calendario o aula después de que un tutor aceptó el horario completo.');
+                }
+            }
+
             $statement = $pdo->prepare(
                 'UPDATE ofertas_tutoria SET id_periodo = :id_periodo, id_materia = :id_materia, id_tipo_tutoria = :id_tipo_tutoria,
                     id_turno = :id_turno, frecuencia_programacion = :frecuencia_programacion,
@@ -268,8 +338,17 @@ final class OfertaTutoria
             );
             $data['id_oferta'] = $id;
             $statement->execute($data);
-            $this->replaceSchedules($id, $schedules, $pdo);
-            $this->replaceDates($id, $dates, $pdo);
+            if (!$scheduleCommitmentIsLocked) {
+                $detachInactiveSchedules = $pdo->prepare(
+                    "DELETE oth FROM oferta_tutor_horarios oth
+                     INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = oth.id_oferta_tutor
+                     WHERE ot.id_oferta = :id_oferta
+                       AND ot.estado NOT IN ('confirmada', 'baja_solicitada')"
+                );
+                $detachInactiveSchedules->execute(['id_oferta' => $id]);
+                $this->replaceSchedules($id, $schedules, $pdo);
+                $this->replaceDates($id, $dates, $pdo);
+            }
             $pdo->commit();
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {
@@ -584,7 +663,7 @@ final class OfertaTutoria
         $insert = $pdo->prepare(
             'INSERT INTO ofertas_tutoria
                 (id_periodo, id_materia, id_tipo_tutoria, id_turno, frecuencia_programacion, nombre_grupo, cupo, descripcion, estado)
-             VALUES (:id_periodo, :id_materia, :id_tipo_tutoria, :id_turno, :frecuencia_programacion, :nombre_grupo, :cupo, :descripcion, \'borrador\')'
+             VALUES (:id_periodo, :id_materia, :id_tipo_tutoria, :id_turno, :frecuencia_programacion, :nombre_grupo, :cupo, :descripcion, \'pendiente\')'
         );
         $insert->execute([
             'id_periodo' => $offer['id_periodo'],
@@ -615,10 +694,21 @@ final class OfertaTutoria
         $sql = <<<'SQL'
             SELECT o.id_oferta, o.id_periodo, o.id_turno, trn.nombre_turno AS turno, o.nombre_grupo, o.cupo, o.descripcion, o.estado AS oferta_estado,
                    ot.id_oferta_tutor, ot.estado AS tutor_estado,
+                   (SELECT b.estado FROM oferta_tutor_bajas b WHERE b.id_oferta_tutor = ot.id_oferta_tutor ORDER BY b.id_baja DESC LIMIT 1) AS ultima_baja_estado,
+                   (SELECT b.motivo FROM oferta_tutor_bajas b WHERE b.id_oferta_tutor = ot.id_oferta_tutor ORDER BY b.id_baja DESC LIMIT 1) AS motivo_baja,
+                   (SELECT b.respuesta_admin FROM oferta_tutor_bajas b WHERE b.id_oferta_tutor = ot.id_oferta_tutor ORDER BY b.id_baja DESC LIMIT 1) AS respuesta_baja,
                      p.nombre_periodo, p.fecha_inicio, p.fecha_fin, p.estado AS periodo_estado,
                      o.frecuencia_programacion,
                    m.nombre_materia, c.nombre_carrera, tt.nombre AS nombre_tipo_tutoria,
-                   COUNT(DISTINCT CASE WHEN i.estado = 'inscrita' THEN i.id_inscripcion END) AS inscritos
+                    COUNT(DISTINCT CASE WHEN i.estado = 'inscrita' THEN i.id_inscripcion END) AS inscritos,
+                    (SELECT COUNT(DISTINCT active_offer.id_oferta)
+                     FROM oferta_tutores active_tutor
+                     INNER JOIN ofertas_tutoria active_offer ON active_offer.id_oferta = active_tutor.id_oferta
+                     WHERE active_tutor.id_tutor = ot.id_tutor
+                       AND active_tutor.estado IN ('pendiente', 'confirmada')
+                       AND active_offer.estado NOT IN ('cancelada', 'finalizada')
+                       AND active_offer.id_periodo = o.id_periodo
+                       AND active_offer.id_turno = o.id_turno) AS materias_mismo_turno
             FROM oferta_tutores ot
             INNER JOIN tutores tut ON tut.id_tutor = ot.id_tutor
             INNER JOIN ofertas_tutoria o ON o.id_oferta = ot.id_oferta
@@ -651,11 +741,57 @@ final class OfertaTutoria
     public function availableForTutor(int $userId): array
     {
         $sql = <<<'SQL'
-            SELECT o.id_oferta, o.id_turno, trn.nombre_turno AS turno, o.nombre_grupo, o.cupo, o.descripcion, o.estado AS oferta_estado,
-                     p.nombre_periodo, p.fecha_inicio, p.fecha_fin,
-                     o.frecuencia_programacion,
+            SELECT o.id_oferta, o.id_periodo, o.id_turno, trn.nombre_turno AS turno, o.nombre_grupo, o.cupo, o.descripcion, o.estado AS oferta_estado,
+                   p.nombre_periodo, p.fecha_inicio, p.fecha_fin,
+                   o.frecuencia_programacion,
                    m.nombre_materia, c.nombre_carrera, tt.nombre AS nombre_tipo_tutoria,
-                   (SELECT COUNT(*) FROM inscripciones_tutoria i WHERE i.id_oferta = o.id_oferta AND i.estado = 'inscrita') AS inscritos
+                   (SELECT COUNT(*) FROM inscripciones_tutoria i WHERE i.id_oferta = o.id_oferta AND i.estado = 'inscrita') AS inscritos,
+                    (SELECT existing_subject.nombre_materia
+                    FROM oferta_tutores existing_tutor
+                    INNER JOIN ofertas_tutoria existing_offer ON existing_offer.id_oferta = existing_tutor.id_oferta
+                    INNER JOIN materias existing_subject ON existing_subject.id_materia = existing_offer.id_materia
+                    WHERE existing_tutor.id_tutor = tut.id_tutor
+                       AND existing_tutor.estado IN ('pendiente', 'confirmada', 'baja_solicitada')
+                       AND existing_offer.estado NOT IN ('cancelada', 'finalizada')
+                       AND existing_offer.id_oferta <> o.id_oferta
+                       AND (
+                           (existing_offer.id_periodo = o.id_periodo AND existing_offer.id_turno = o.id_turno)
+                           OR EXISTS (
+                               SELECT 1
+                               FROM oferta_tutor_horarios existing_assignment_schedule
+                               INNER JOIN oferta_horarios existing_schedule ON existing_schedule.id_oferta_horario = existing_assignment_schedule.id_oferta_horario
+                               INNER JOIN periodos_tutoria existing_period ON existing_period.id_periodo = existing_offer.id_periodo
+                               INNER JOIN oferta_horarios candidate_schedule ON candidate_schedule.id_oferta = o.id_oferta
+                               WHERE existing_assignment_schedule.id_oferta_tutor = existing_tutor.id_oferta_tutor
+                                 AND existing_offer.id_turno = o.id_turno
+                                 AND existing_schedule.dia_semana = candidate_schedule.dia_semana
+                                 AND existing_period.fecha_inicio <= p.fecha_fin
+                                 AND existing_period.fecha_fin >= p.fecha_inicio
+                           )
+                       )
+                    ORDER BY existing_tutor.fecha_solicitud, existing_tutor.id_oferta_tutor
+                    LIMIT 1) AS materia_bloqueante,
+                    EXISTS (
+                        SELECT 1 FROM oferta_tutores assigned_tutor
+                        WHERE assigned_tutor.id_oferta = o.id_oferta
+                          AND assigned_tutor.estado = 'confirmada'
+                    ) AS tiene_tutor_confirmado,
+                    EXISTS (
+                        SELECT 1 FROM oferta_tutores withdrawal_tutor
+                        WHERE withdrawal_tutor.id_oferta = o.id_oferta
+                          AND withdrawal_tutor.estado = 'baja_solicitada'
+                    ) AS necesita_reemplazo,
+                    CASE
+                        WHEN p.estado = 'publicado' AND CURRENT_DATE < p.fecha_inicio THEN 1
+                        WHEN p.estado IN ('publicado', 'cerrado') AND p.fecha_fin >= CURRENT_DATE
+                             AND (
+                                 EXISTS (SELECT 1 FROM oferta_tutores withdrawal_tutor
+                                         WHERE withdrawal_tutor.id_oferta = o.id_oferta AND withdrawal_tutor.estado = 'baja_solicitada')
+                                 OR NOT EXISTS (SELECT 1 FROM oferta_tutores assigned_tutor
+                                                WHERE assigned_tutor.id_oferta = o.id_oferta AND assigned_tutor.estado = 'confirmada')
+                             ) THEN 1
+                        ELSE 0
+                    END AS seleccion_habilitada
             FROM ofertas_tutoria o
             INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
             INNER JOIN turnos trn ON trn.id_turno = o.id_turno
@@ -663,9 +799,9 @@ final class OfertaTutoria
             INNER JOIN tipos_tutoria tt ON tt.id_tipo_tutoria = o.id_tipo_tutoria
             LEFT JOIN carreras c ON c.id_carrera = m.id_carrera
             INNER JOIN tutores tut ON tut.id_usuario = :id_usuario
-            WHERE o.estado = 'publicada'
-              AND p.estado = 'publicado'
-              AND CURRENT_DATE < p.fecha_inicio
+             WHERE o.estado = 'publicada'
+               AND p.estado IN ('publicado', 'cerrado')
+               AND p.fecha_fin >= CURRENT_DATE
               AND EXISTS (
                   SELECT 1 FROM oferta_tutoria_fechas otf
                   WHERE otf.id_oferta = o.id_oferta AND otf.estado = 'activa'
@@ -691,22 +827,405 @@ final class OfertaTutoria
 
     public function selectAsTutor(int $userId, int $offerId): void
     {
-        $statement = Database::connection()->prepare(
-            'INSERT INTO oferta_tutores (id_oferta, id_tutor, estado, fecha_revision, revisado_por)
-             SELECT :id_oferta, t.id_tutor, \'confirmada\', CURRENT_TIMESTAMP, NULL FROM tutores t
-             INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
-             INNER JOIN ofertas_tutoria o ON o.id_oferta = :id_oferta_again
-             INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
-             WHERE t.id_usuario = :id_usuario AND u.estado = \'activo\' AND o.estado = \'publicada\'
-                AND p.estado = \'publicado\' AND CURRENT_DATE < p.fecha_inicio
-                AND EXISTS (
-                    SELECT 1 FROM oferta_tutoria_fechas otf
-                    WHERE otf.id_oferta = o.id_oferta AND otf.estado = \'activa\'
-                )'
-        );
-        $statement->execute(['id_oferta' => $offerId, 'id_oferta_again' => $offerId, 'id_usuario' => $userId]);
-        if ($statement->rowCount() < 1) {
-            throw new RuntimeException('La materia ofertada ya no esta disponible para seleccionarse.');
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $tutorQuery = $pdo->prepare(
+                'SELECT t.id_tutor FROM tutores t
+                 INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
+                 WHERE t.id_usuario = :id_usuario AND u.estado = \'activo\'
+                 FOR UPDATE'
+            );
+            $tutorQuery->execute(['id_usuario' => $userId]);
+            $tutorId = $tutorQuery->fetchColumn();
+            if (!$tutorId) {
+                throw new RuntimeException('La cuenta de tutor no esta disponible.');
+            }
+
+            $offerQuery = $pdo->prepare(
+                'SELECT o.id_periodo, o.id_turno, p.fecha_inicio, p.fecha_fin,
+                        (SELECT COUNT(*) FROM oferta_horarios oh WHERE oh.id_oferta = o.id_oferta) AS horarios_oferta
+                 FROM ofertas_tutoria o
+                 INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+                 WHERE o.id_oferta = :id_oferta AND o.estado = \'publicada\'
+                   AND p.estado IN (\'publicado\', \'cerrado\')
+                   AND p.fecha_fin >= CURRENT_DATE
+                   AND (
+                       (p.estado = \'publicado\' AND CURRENT_DATE < p.fecha_inicio)
+                       OR EXISTS (
+                           SELECT 1 FROM oferta_tutores withdrawal_tutor
+                           WHERE withdrawal_tutor.id_oferta = o.id_oferta
+                             AND withdrawal_tutor.estado = \'baja_solicitada\'
+                       )
+                       OR NOT EXISTS (
+                           SELECT 1 FROM oferta_tutores assigned_tutor
+                           WHERE assigned_tutor.id_oferta = o.id_oferta
+                             AND assigned_tutor.estado = \'confirmada\'
+                       )
+                   )
+                   AND EXISTS (
+                       SELECT 1 FROM oferta_tutoria_fechas otf
+                       WHERE otf.id_oferta = o.id_oferta AND otf.estado = \'activa\'
+                   )
+                 FOR UPDATE'
+            );
+            $offerQuery->execute(['id_oferta' => $offerId]);
+            $offer = $offerQuery->fetch();
+            if (!$offer) {
+                throw new RuntimeException('La materia ofertada ya no esta disponible para seleccionarse.');
+            }
+            if ((int) $offer['horarios_oferta'] < 1) {
+                throw new RuntimeException('La oferta aun no tiene horarios definidos para aceptar el compromiso.');
+            }
+
+            $conflict = $pdo->prepare(
+                'SELECT m.nombre_materia
+                 FROM oferta_tutores ot
+                 INNER JOIN ofertas_tutoria o ON o.id_oferta = ot.id_oferta
+                 INNER JOIN materias m ON m.id_materia = o.id_materia
+                 WHERE ot.id_tutor = :id_tutor
+                   AND ot.estado IN (\'pendiente\', \'confirmada\', \'baja_solicitada\')
+                   AND o.estado NOT IN (\'cancelada\', \'finalizada\')
+                   AND o.id_periodo = :id_periodo
+                   AND o.id_turno = :id_turno
+                 ORDER BY ot.fecha_solicitud, ot.id_oferta_tutor
+                 LIMIT 1'
+            );
+            $conflict->execute([
+                'id_tutor' => (int) $tutorId,
+                'id_periodo' => (int) $offer['id_periodo'],
+                'id_turno' => (int) $offer['id_turno'],
+            ]);
+            $conflictingSubject = $conflict->fetchColumn();
+            if ($conflictingSubject !== false) {
+                throw new RuntimeException(sprintf(
+                    'Ya seleccionaste "%s" para ese periodo y turno. Solo puedes impartir una materia por turno durante el periodo.',
+                    $conflictingSubject
+                ));
+            }
+
+            $scheduleConflict = $pdo->prepare(
+                'SELECT existing_subject.nombre_materia
+                 FROM oferta_tutor_horarios existing_tutor_schedule
+                 INNER JOIN oferta_tutores existing_tutor ON existing_tutor.id_oferta_tutor = existing_tutor_schedule.id_oferta_tutor
+                 INNER JOIN ofertas_tutoria existing_offer ON existing_offer.id_oferta = existing_tutor.id_oferta
+                 INNER JOIN materias existing_subject ON existing_subject.id_materia = existing_offer.id_materia
+                 INNER JOIN oferta_horarios existing_schedule ON existing_schedule.id_oferta_horario = existing_tutor_schedule.id_oferta_horario
+                 INNER JOIN periodos_tutoria existing_period ON existing_period.id_periodo = existing_offer.id_periodo
+                 INNER JOIN oferta_horarios selected_schedule ON selected_schedule.id_oferta = :id_oferta
+                 INNER JOIN ofertas_tutoria selected_offer ON selected_offer.id_oferta = selected_schedule.id_oferta
+                 INNER JOIN periodos_tutoria selected_period ON selected_period.id_periodo = selected_offer.id_periodo
+                 WHERE existing_tutor.id_tutor = :id_tutor
+                   AND existing_tutor.estado IN (\'confirmada\', \'baja_solicitada\')
+                   AND existing_offer.id_oferta <> selected_offer.id_oferta
+                   AND existing_offer.id_turno = selected_offer.id_turno
+                   AND existing_schedule.dia_semana = selected_schedule.dia_semana
+                   AND existing_period.fecha_inicio <= selected_period.fecha_fin
+                   AND existing_period.fecha_fin >= selected_period.fecha_inicio
+                 LIMIT 1'
+            );
+            $scheduleConflict->execute(['id_oferta' => $offerId, 'id_tutor' => (int) $tutorId]);
+            $overlappingSubject = $scheduleConflict->fetchColumn();
+            if ($overlappingSubject !== false) {
+                throw new RuntimeException(sprintf(
+                    'El horario de "%s" se cruza con esta oferta en el mismo día y turno de un periodo solapado.',
+                    $overlappingSubject
+                ));
+            }
+
+            $insert = $pdo->prepare(
+                'INSERT INTO oferta_tutores (id_oferta, id_tutor, estado, fecha_revision, revisado_por)
+                 VALUES (:id_oferta, :id_tutor, \'confirmada\', CURRENT_TIMESTAMP, NULL)'
+            );
+            $insert->execute(['id_oferta' => $offerId, 'id_tutor' => (int) $tutorId]);
+            $offerTutorId = (int) $pdo->lastInsertId();
+            $attachSchedules = $pdo->prepare(
+                'INSERT INTO oferta_tutor_horarios (id_oferta_tutor, id_oferta_horario)
+                 SELECT :id_oferta_tutor, id_oferta_horario FROM oferta_horarios
+                 WHERE id_oferta = :id_oferta'
+            );
+            $attachSchedules->execute(['id_oferta_tutor' => $offerTutorId, 'id_oferta' => $offerId]);
+            if ($attachSchedules->rowCount() < 1) {
+                throw new RuntimeException('La oferta no tiene horarios para confirmar el compromiso del tutor.');
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    public function requestTutorWithdrawal(int $userId, int $offerTutorId, string $reason): string
+    {
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $owner = $pdo->prepare(
+                'SELECT ot.id_oferta_tutor, ot.id_tutor, ot.id_oferta, ot.estado AS tutor_estado,
+                        o.estado AS oferta_estado, p.estado AS periodo_estado, p.fecha_inicio, p.fecha_fin
+                 FROM oferta_tutores ot
+                 INNER JOIN tutores t ON t.id_tutor = ot.id_tutor
+                 INNER JOIN ofertas_tutoria o ON o.id_oferta = ot.id_oferta
+                 INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+                 WHERE ot.id_oferta_tutor = :id AND t.id_usuario = :id_usuario
+                 FOR UPDATE'
+            );
+            $owner->execute(['id' => $offerTutorId, 'id_usuario' => $userId]);
+            $assignment = $owner->fetch();
+            if (!$assignment) {
+                throw new RuntimeException('La asignación no existe o no pertenece a tu perfil.');
+            }
+            if ($assignment['tutor_estado'] !== 'confirmada') {
+                throw new RuntimeException('Solo puedes solicitar la baja de una materia confirmada.');
+            }
+            if (in_array($assignment['oferta_estado'], ['cancelada', 'finalizada'], true)
+                || $assignment['periodo_estado'] === 'finalizado'
+                || $assignment['fecha_fin'] < date('Y-m-d')) {
+                throw new RuntimeException('Esta materia ya terminó o fue cancelada.');
+            }
+
+            $enrollmentQuery = $pdo->prepare(
+                "SELECT id_inscripcion FROM inscripciones_tutoria
+                 WHERE id_oferta_tutor = :id_oferta_tutor AND estado = 'inscrita'
+                 FOR UPDATE"
+            );
+            $enrollmentQuery->execute(['id_oferta_tutor' => $offerTutorId]);
+            $enrollments = $enrollmentQuery->fetchAll(PDO::FETCH_COLUMN);
+
+            $sessionQuery = $pdo->prepare(
+                "SELECT ses.id_tutoria FROM tutorias ses
+                 INNER JOIN inscripciones_tutoria i ON i.id_inscripcion = ses.id_inscripcion
+                 WHERE i.id_oferta_tutor = :id_oferta_tutor
+                   AND ses.estado IN ('pendiente', 'confirmada')
+                 FOR UPDATE"
+            );
+            $sessionQuery->execute(['id_oferta_tutor' => $offerTutorId]);
+            $sessions = $sessionQuery->fetchAll(PDO::FETCH_COLUMN);
+
+            $immediate = $assignment['fecha_inicio'] > date('Y-m-d') && !$enrollments && !$sessions;
+            $state = $immediate ? 'cancelada' : 'baja_solicitada';
+            $withdrawal = $pdo->prepare(
+                'INSERT INTO oferta_tutor_bajas
+                    (id_oferta_tutor, solicitada_por, motivo, estado, fecha_resolucion)
+                 VALUES (:id_oferta_tutor, :solicitada_por, :motivo, :estado,
+                         CASE WHEN :directa = 1 THEN CURRENT_TIMESTAMP ELSE NULL END)'
+            );
+            $withdrawal->execute([
+                'id_oferta_tutor' => $offerTutorId,
+                'solicitada_por' => $userId,
+                'motivo' => $reason,
+                'estado' => $immediate ? 'aprobada' : 'pendiente',
+                'directa' => $immediate ? 1 : 0,
+            ]);
+            $update = $pdo->prepare('UPDATE oferta_tutores SET estado = :estado WHERE id_oferta_tutor = :id');
+            $update->execute(['estado' => $state, 'id' => $offerTutorId]);
+            $pdo->commit();
+
+            return $state;
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    public function pendingTutorWithdrawals(): array
+    {
+        $sql = <<<'SQL'
+            SELECT b.id_baja, b.id_oferta_tutor, b.motivo, b.fecha_solicitud,
+                   o.id_oferta, m.nombre_materia, p.nombre_periodo, p.fecha_inicio, p.fecha_fin,
+                   trn.nombre_turno AS turno, CONCAT(u.nombre, ' ', u.apellido) AS tutor,
+                   (SELECT COUNT(*) FROM inscripciones_tutoria i
+                    WHERE i.id_oferta_tutor = ot.id_oferta_tutor AND i.estado = 'inscrita') AS inscritos_activos,
+                   (SELECT COUNT(*) FROM tutorias ses
+                    INNER JOIN inscripciones_tutoria i ON i.id_inscripcion = ses.id_inscripcion
+                    WHERE i.id_oferta_tutor = ot.id_oferta_tutor
+                      AND ses.estado IN ('pendiente', 'confirmada')) AS sesiones_activas,
+                   (SELECT CONCAT(replacement_user.nombre, ' ', replacement_user.apellido)
+                    FROM oferta_tutores replacement_assignment
+                    INNER JOIN tutores replacement_tutor ON replacement_tutor.id_tutor = replacement_assignment.id_tutor
+                    INNER JOIN usuarios replacement_user ON replacement_user.id_usuario = replacement_tutor.id_usuario AND replacement_user.estado = 'activo'
+                    WHERE replacement_assignment.id_oferta = o.id_oferta
+                      AND replacement_assignment.estado = 'confirmada'
+                      AND replacement_assignment.id_oferta_tutor <> ot.id_oferta_tutor
+                      AND NOT EXISTS (
+                          SELECT 1 FROM oferta_horarios oh
+                          WHERE oh.id_oferta = o.id_oferta
+                            AND NOT EXISTS (
+                                SELECT 1 FROM oferta_tutor_horarios oth
+                                WHERE oth.id_oferta_tutor = replacement_assignment.id_oferta_tutor
+                                  AND oth.id_oferta_horario = oh.id_oferta_horario
+                            )
+                      )
+                    ORDER BY replacement_assignment.fecha_solicitud, replacement_assignment.id_oferta_tutor
+                    LIMIT 1) AS tutor_reemplazo
+            FROM oferta_tutor_bajas b
+            INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = b.id_oferta_tutor
+            INNER JOIN tutores t ON t.id_tutor = ot.id_tutor
+            INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
+            INNER JOIN ofertas_tutoria o ON o.id_oferta = ot.id_oferta
+            INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+            INNER JOIN materias m ON m.id_materia = o.id_materia
+            INNER JOIN turnos trn ON trn.id_turno = o.id_turno
+            WHERE b.estado = 'pendiente' AND ot.estado = 'baja_solicitada'
+            ORDER BY b.fecha_solicitud, b.id_baja
+        SQL;
+
+        return Database::connection()->query($sql)->fetchAll();
+    }
+
+    public function recentTutorWithdrawals(): array
+    {
+        $sql = <<<'SQL'
+            SELECT b.id_baja, b.estado, b.motivo, b.respuesta_admin, b.fecha_solicitud, b.fecha_resolucion,
+                   o.nombre_grupo, m.nombre_materia, p.nombre_periodo, trn.nombre_turno AS turno,
+                   CONCAT(u.nombre, ' ', u.apellido) AS tutor,
+                   CONCAT(reviewer.nombre, ' ', reviewer.apellido) AS revisor,
+                   CONCAT(replacement_user.nombre, ' ', replacement_user.apellido) AS tutor_reemplazo
+            FROM oferta_tutor_bajas b
+            INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = b.id_oferta_tutor
+            INNER JOIN tutores t ON t.id_tutor = ot.id_tutor
+            INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
+            INNER JOIN ofertas_tutoria o ON o.id_oferta = ot.id_oferta
+            INNER JOIN materias m ON m.id_materia = o.id_materia
+            INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+            INNER JOIN turnos trn ON trn.id_turno = o.id_turno
+            LEFT JOIN usuarios reviewer ON reviewer.id_usuario = b.resuelta_por
+             LEFT JOIN oferta_tutores replacement_assignment ON replacement_assignment.id_oferta_tutor = b.id_oferta_tutor_reemplazo
+             LEFT JOIN tutores replacement_tutor ON replacement_tutor.id_tutor = replacement_assignment.id_tutor
+            LEFT JOIN usuarios replacement_user ON replacement_user.id_usuario = replacement_tutor.id_usuario
+            WHERE b.estado IN ('aprobada', 'rechazada')
+            ORDER BY b.fecha_resolucion DESC, b.id_baja DESC
+            LIMIT 20
+        SQL;
+
+        return Database::connection()->query($sql)->fetchAll();
+    }
+
+    public function reviewTutorWithdrawal(int $withdrawalId, string $decision, int $reviewerId, string $notes): void
+    {
+        if (!in_array($decision, ['aprobada', 'rechazada'], true)) {
+            throw new InvalidArgumentException('Seleccione aprobar o rechazar la baja.');
+        }
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $lock = $pdo->prepare(
+                "SELECT b.id_baja, b.id_oferta_tutor, b.estado AS baja_estado,
+                        ot.id_oferta, ot.estado AS tutor_estado
+                 FROM oferta_tutor_bajas b
+                 INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = b.id_oferta_tutor
+                 WHERE b.id_baja = :id_baja
+                 FOR UPDATE"
+            );
+            $lock->execute(['id_baja' => $withdrawalId]);
+            $request = $lock->fetch();
+            if (!$request || $request['baja_estado'] !== 'pendiente' || $request['tutor_estado'] !== 'baja_solicitada') {
+                throw new RuntimeException('La solicitud de baja ya fue procesada o no existe.');
+            }
+
+            $replacementId = null;
+            if ($decision === 'aprobada') {
+                $enrollmentQuery = $pdo->prepare(
+                    "SELECT id_inscripcion FROM inscripciones_tutoria
+                     WHERE id_oferta_tutor = :id_oferta_tutor AND estado = 'inscrita'
+                     FOR UPDATE"
+                );
+                $enrollmentQuery->execute(['id_oferta_tutor' => (int) $request['id_oferta_tutor']]);
+                $enrollments = $enrollmentQuery->fetchAll(PDO::FETCH_COLUMN);
+
+                $sessionQuery = $pdo->prepare(
+                    "SELECT ses.id_tutoria FROM tutorias ses
+                     INNER JOIN inscripciones_tutoria i ON i.id_inscripcion = ses.id_inscripcion
+                     WHERE i.id_oferta_tutor = :id_oferta_tutor
+                       AND ses.estado IN ('pendiente', 'confirmada')
+                     FOR UPDATE"
+                );
+                $sessionQuery->execute(['id_oferta_tutor' => (int) $request['id_oferta_tutor']]);
+                $sessions = $sessionQuery->fetchAll(PDO::FETCH_COLUMN);
+
+                if ($enrollments || $sessions) {
+                    $replacement = $pdo->prepare(
+                        "SELECT replacement_assignment.id_oferta_tutor, replacement_assignment.id_tutor
+                         FROM oferta_tutores replacement_assignment
+                         INNER JOIN tutores replacement_profile ON replacement_profile.id_tutor = replacement_assignment.id_tutor
+                         INNER JOIN usuarios replacement_user ON replacement_user.id_usuario = replacement_profile.id_usuario AND replacement_user.estado = 'activo'
+                         INNER JOIN ofertas_tutoria o ON o.id_oferta = replacement_assignment.id_oferta
+                         WHERE replacement_assignment.id_oferta = :id_oferta
+                           AND replacement_assignment.id_oferta_tutor <> :id_oferta_tutor
+                           AND replacement_assignment.estado = 'confirmada'
+                           AND NOT EXISTS (
+                               SELECT 1 FROM oferta_horarios oh
+                               WHERE oh.id_oferta = o.id_oferta
+                                 AND NOT EXISTS (
+                                     SELECT 1 FROM oferta_tutor_horarios oth
+                                     WHERE oth.id_oferta_tutor = replacement_assignment.id_oferta_tutor
+                                       AND oth.id_oferta_horario = oh.id_oferta_horario
+                                 )
+                           )
+                         ORDER BY replacement_assignment.fecha_solicitud, replacement_assignment.id_oferta_tutor
+                         LIMIT 1 FOR UPDATE"
+                    );
+                    $replacement->execute([
+                        'id_oferta' => (int) $request['id_oferta'],
+                        'id_oferta_tutor' => (int) $request['id_oferta_tutor'],
+                    ]);
+                    $replacementRow = $replacement->fetch();
+                    if (!$replacementRow) {
+                        throw new RuntimeException('Antes de aprobar la baja, confirme un tutor de reemplazo con todos los horarios aceptados.');
+                    }
+                    $replacementId = (int) $replacementRow['id_oferta_tutor'];
+                    $sessionTutor = $pdo->prepare(
+                        "UPDATE tutorias ses
+                         INNER JOIN inscripciones_tutoria i ON i.id_inscripcion = ses.id_inscripcion
+                         SET ses.id_tutor = :id_tutor
+                         WHERE i.id_oferta_tutor = :id_oferta_tutor
+                           AND ses.estado IN ('pendiente', 'confirmada')"
+                    );
+                    $sessionTutor->execute([
+                        'id_tutor' => (int) $replacementRow['id_tutor'],
+                        'id_oferta_tutor' => (int) $request['id_oferta_tutor'],
+                    ]);
+                    $moveEnrollments = $pdo->prepare(
+                        "UPDATE inscripciones_tutoria
+                         SET id_oferta_tutor = :replacement_id
+                         WHERE id_oferta_tutor = :old_id AND estado = 'inscrita'"
+                    );
+                    $moveEnrollments->execute([
+                        'replacement_id' => $replacementId,
+                        'old_id' => (int) $request['id_oferta_tutor'],
+                    ]);
+                }
+            }
+
+            $newAssignmentState = $decision === 'aprobada' ? 'cancelada' : 'confirmada';
+            $updateAssignment = $pdo->prepare('UPDATE oferta_tutores SET estado = :estado WHERE id_oferta_tutor = :id');
+            $updateAssignment->execute([
+                'estado' => $newAssignmentState,
+                'id' => (int) $request['id_oferta_tutor'],
+            ]);
+            $updateRequest = $pdo->prepare(
+                'UPDATE oferta_tutor_bajas
+                 SET estado = :estado, respuesta_admin = :respuesta_admin, resuelta_por = :revisor,
+                     id_oferta_tutor_reemplazo = :reemplazo, fecha_resolucion = CURRENT_TIMESTAMP
+                 WHERE id_baja = :id_baja'
+            );
+            $updateRequest->execute([
+                'estado' => $decision,
+                'respuesta_admin' => $notes !== '' ? $notes : null,
+                'revisor' => $reviewerId,
+                'reemplazo' => $replacementId,
+                'id_baja' => $withdrawalId,
+            ]);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
         }
     }
 

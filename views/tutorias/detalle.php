@@ -9,10 +9,10 @@
     <section class="card">
         <div class="section-heading"><h2><?= e($detail['nombre_materia']) ?></h2><span class="eyebrow">Detalle de tutoría</span></div>
         <div class="form-grid">
-            <p><strong>Tutor</strong><br><?= e($detail['tutor']) ?></p>
+            <p><strong>Tutor</strong><br><?= e($detail['tutor'] ?: 'Por asignar') ?></p>
             <p><strong>Periodo</strong><br><?= e($detail['nombre_periodo']) ?><br><?= e($detail['fecha_inicio'] . ' a ' . $detail['fecha_fin']) ?></p>
-            <p><strong>Horario</strong><br><?= e($detail['dia_semana'] . ' | ' . substr($detail['hora_inicio'], 0, 5) . ' - ' . substr($detail['hora_fin'], 0, 5)) ?></p>
-            <p><strong>Aula</strong><br><?= e($detail['nombre_aula'] ?: 'Sin aula') ?><?php if ($detail['ubicacion']): ?><br><?= e($detail['ubicacion']) ?><?php endif; ?></p>
+            <p><strong>Horario</strong><br><?= $detail['dia_semana'] ? e($detail['dia_semana'] . ' | ' . substr($detail['hora_inicio'], 0, 5) . ' - ' . substr($detail['hora_fin'], 0, 5)) : 'Según horario publicado' ?></p>
+            <p><strong>Aula</strong><br><?= e($detail['nombre_aula'] ?: 'Según horario publicado') ?><?php if ($detail['ubicacion']): ?><br><?= e($detail['ubicacion']) ?><?php endif; ?></p>
             <p><strong>Grupo</strong><br><?= e($detail['nombre_grupo']) ?></p>
             <p><strong>Cupos</strong><br><?= (int) $detail['inscritos'] ?> inscritos de <?= (int) $detail['cupo'] ?><br><?= (int) $availableSeats ?> disponibles</p>
         </div>

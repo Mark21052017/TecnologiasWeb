@@ -13,6 +13,7 @@ $profileIcon = $profileIcons[$role] ?? 'bi-person-fill';
 $profilePhotoUrl = !empty($authUser['foto_perfil']) && in_array($role, ['tutor', 'estudiante'], true)
     ? app_url('mi-perfil/foto.php?v=' . rawurlencode((string) $authUser['foto_perfil']))
     : null;
+$unreadNotifications = $isAuthenticated ? (new NotificacionesController())->unreadCount((int) $authUser['id_usuario']) : 0;
 $appCssVersion = (string) (@filemtime(dirname(__DIR__, 2) . '/css/app.css') ?: '1');
 ?><!doctype html>
 <html lang="es" data-bs-theme="light">
@@ -99,18 +100,9 @@ $appCssVersion = (string) (@filemtime(dirname(__DIR__, 2) . '/css/app.css') ?: '
                         <i class="bi bi-megaphone-fill nav-icon" aria-hidden="true"></i>
                         <span>Ofertas academicas</span>
                     </a>
-                    <a class="nav-link <?= $activePage === 'solicitudes-tutor' ? 'is-active' : '' ?>" href="<?= e(app_url('solicitudes-tutor/')) ?>">
+                    <a class="nav-link <?= $activePage === 'solicitudes' ? 'is-active' : '' ?>" href="<?= e(app_url('solicitudes/')) ?>">
                         <i class="bi bi-person-check-fill nav-icon" aria-hidden="true"></i>
-                        <span>Solicitudes</span>
-                    </a>
-                    <span class="nav-label">Perfiles academicos</span>
-                    <a class="nav-link <?= $activePage === 'estudiantes' ? 'is-active' : '' ?>" href="<?= e(app_url('estudiantes/')) ?>">
-                        <i class="bi bi-mortarboard-fill nav-icon" aria-hidden="true"></i>
-                        <span>Estudiantes</span>
-                    </a>
-                    <a class="nav-link <?= $activePage === 'tutores' ? 'is-active' : '' ?>" href="<?= e(app_url('tutores/')) ?>">
-                        <i class="bi bi-person-badge-fill nav-icon" aria-hidden="true"></i>
-                        <span>Tutores</span>
+                        <span>Solicitudes de materias</span>
                     </a>
                     <span class="nav-label">Operacion</span>
                     <a class="nav-link <?= $activePage === 'tutorias' ? 'is-active' : '' ?>" href="<?= e(app_url('tutorias/')) ?>">
@@ -127,12 +119,21 @@ $appCssVersion = (string) (@filemtime(dirname(__DIR__, 2) . '/css/app.css') ?: '
                         <span>Registro de accesos</span>
                     </a>
                 <?php endif; ?>
-                <?php if (Auth::can('modalidades-grado')): ?>
+                <?php if (Auth::can('modalidades-grado') && in_array($role, ['administrador', 'coordinador_mg', 'auxiliar_mg'], true)): ?>
                     <span class="nav-label">Modalidades de Grado</span>
-                    <a class="nav-link <?= $activePage === 'modalidades-grado' ? 'is-active' : '' ?>" href="<?= e(app_url('modalidades-grado/')) ?>">
-                        <i class="bi bi-mortarboard nav-icon" aria-hidden="true"></i>
-                        <span>Modalidades de Grado</span>
+                    <a class="nav-link <?= $activePage === 'mg-resumen' ? 'is-active' : '' ?>" href="<?= e(app_url('modalidades-grado/')) ?>">
+                        <i class="bi bi-grid-1x2-fill nav-icon" aria-hidden="true"></i>
+                        <span>Resumen</span>
                     </a>
+                    <?php if ($role === 'administrador'): ?>
+                        <a class="nav-link <?= $activePage === 'mg-solicitudes' ? 'is-active' : '' ?>" href="<?= e(app_url('modalidades-grado/solicitudes.php')) ?>"><i class="bi bi-inbox-fill nav-icon" aria-hidden="true"></i><span>Solicitudes</span></a>
+                    <?php endif; ?>
+                    <a class="nav-link <?= in_array($activePage, ['mg-cohortes', 'mg-calendario'], true) ? 'is-active' : '' ?>" href="<?= e(app_url('modalidades-grado/cohortes.php')) ?>"><i class="bi bi-people-fill nav-icon" aria-hidden="true"></i><span>Cohortes</span></a>
+                    <?php if ($role === 'administrador'): ?>
+                        <a class="nav-link <?= $activePage === 'mg-seguimiento' ? 'is-active' : '' ?>" href="<?= e(app_url('modalidades-grado/seguimiento.php')) ?>"><i class="bi bi-activity nav-icon" aria-hidden="true"></i><span>Seguimiento</span></a>
+                        <a class="nav-link <?= $activePage === 'mg-defensas' ? 'is-active' : '' ?>" href="<?= e(app_url('modalidades-grado/defensas.php')) ?>"><i class="bi bi-mortarboard-fill nav-icon" aria-hidden="true"></i><span>Defensas</span></a>
+                    <?php endif; ?>
+                    <?php if (in_array($role, ['administrador', 'coordinador_mg'], true)): ?><a class="nav-link <?= in_array($activePage, ['mg-configuracion','mg-parametros','mg-modalidades','mg-academico','mg-planes-estudiante','mg-oferta-carreras'], true) ? 'is-active' : '' ?>" href="<?= e(app_url('modalidades-grado/configuracion.php')) ?>"><i class="bi bi-sliders nav-icon" aria-hidden="true"></i><span>Configuración</span></a><?php endif; ?>
                 <?php endif; ?>
                 <?php if (in_array($role, ['tutor', 'estudiante'], true)): ?>
                     <span class="nav-label">Mi espacio</span>
@@ -142,33 +143,43 @@ $appCssVersion = (string) (@filemtime(dirname(__DIR__, 2) . '/css/app.css') ?: '
                     </a>
                 <?php endif; ?>
                 <?php if ($role === 'tutor'): ?>
+                    <span class="nav-label">Operacion</span>
                     <?php if (Auth::can('ofertas')): ?><a class="nav-link <?= $activePage === 'materias-ofertadas' ? 'is-active' : '' ?>" href="<?= e(app_url('materias-ofertadas/')) ?>">
                         <i class="bi bi-journal-bookmark-fill nav-icon" aria-hidden="true"></i>
                         <span>Materias ofertadas</span>
                     </a><?php endif; ?>
-                    <span class="nav-label">Operacion</span>
-                <?php endif; ?>
-                <?php if ($role === 'tutor' && Auth::can('ofertas')): ?>
-                    <a class="nav-link <?= $activePage === 'disponibilidad' ? 'is-active' : '' ?>" href="<?= e(app_url('disponibilidad/')) ?>">
-                        <i class="bi bi-calendar-week-fill nav-icon" aria-hidden="true"></i>
-                        <span>Disponibilidad</span>
-                    </a>
                 <?php endif; ?>
                 <?php if ($role === 'estudiante'): ?>
                     <?php if (Auth::can('ofertas')): ?><a class="nav-link <?= $activePage === 'materias-disponibles' ? 'is-active' : '' ?>" href="<?= e(app_url('materias-disponibles/')) ?>">
                         <i class="bi bi-journal-bookmark-fill nav-icon" aria-hidden="true"></i>
                         <span>Materias disponibles</span>
                     </a><?php endif; ?>
+                    <?php if (Auth::can('solicitudes_apertura')): ?><a class="nav-link <?= $activePage === 'solicitudes' ? 'is-active' : '' ?>" href="<?= e(app_url('solicitudes/')) ?>">
+                        <i class="bi bi-inbox nav-icon" aria-hidden="true"></i>
+                        <span>Solicitudes de materias</span>
+                    </a><?php endif; ?>
                 <?php endif; ?>
-                <?php if (in_array($role, ['tutor', 'estudiante'], true) && Auth::can('tutorias')): ?>
+                <?php if ($role === 'tutor' && Auth::can('tutorias')): ?>
                     <a class="nav-link <?= $activePage === 'tutorias' ? 'is-active' : '' ?>" href="<?= e(app_url('tutorias/')) ?>">
                         <i class="bi bi-calendar2-check-fill nav-icon" aria-hidden="true"></i>
-                        <span><?= $role === 'estudiante' ? 'Mis tutorias' : 'Tutorias' ?></span>
+                        <span>Tutorias</span>
                     </a>
-                    <?php if (Auth::can('evaluaciones')): ?><a class="nav-link <?= $activePage === 'evaluaciones' ? 'is-active' : '' ?>" href="<?= e(app_url('evaluaciones/')) ?>">
+                <?php endif; ?>
+                <?php if ($role === 'tutor' && Auth::can('modalidades-grado') && (new MgPermiso())->userHasPermission((int) $authUser['id_usuario'], 'mg.trabajos.propios')): ?>
+                    <a class="nav-link <?= $activePage === 'mg-mis-trabajos' ? 'is-active' : '' ?>" href="<?= e(app_url('modalidades-grado/mis-trabajos.php')) ?>"><i class="bi bi-journal-text nav-icon" aria-hidden="true"></i><span>Mis trabajos de grado</span></a>
+                <?php endif; ?>
+                <?php if (in_array($role, ['tutor', 'estudiante'], true) && Auth::can('evaluaciones')): ?>
+                    <a class="nav-link <?= $activePage === 'evaluaciones' ? 'is-active' : '' ?>" href="<?= e(app_url('evaluaciones/')) ?>">
                         <i class="bi bi-star-fill nav-icon" aria-hidden="true"></i>
-                        <span>Evaluaciones</span>
-                    </a><?php endif; ?>
+                        <span><?= $role === 'estudiante' ? 'Calificaciones' : 'Evaluaciones' ?></span>
+                    </a>
+                <?php endif; ?>
+                <?php if (in_array($role, ['tutor', 'estudiante'], true) && Auth::can('modalidades-grado')): ?>
+                    <span class="nav-label">Modalidades de Grado</span>
+                    <a class="nav-link <?= $activePage === ($role === 'estudiante' ? 'mg-solicitud' : 'mg-resumen') ? 'is-active' : '' ?>" href="<?= e(app_url($role === 'estudiante' ? 'modalidades-grado/mi-solicitud.php' : 'modalidades-grado/')) ?>">
+                        <i class="bi bi-mortarboard nav-icon" aria-hidden="true"></i>
+                        <span><?= $role === 'estudiante' ? 'Mi Modalidad de Grado' : 'Resumen' ?></span>
+                    </a>
                 <?php endif; ?>
             </nav>
 
@@ -201,16 +212,31 @@ $appCssVersion = (string) (@filemtime(dirname(__DIR__, 2) . '/css/app.css') ?: '
                     <strong><?= e($title) ?></strong>
                 </div>
                 <div class="topbar-actions">
+                    <a class="notification-toggle" href="<?= e(app_url('notificaciones/')) ?>" aria-label="Notificaciones<?= $unreadNotifications > 0 ? ', ' . $unreadNotifications . ' sin leer' : '' ?>" title="Notificaciones">
+                        <i class="bi bi-bell-fill" aria-hidden="true"></i>
+                        <?php if ($unreadNotifications > 0): ?><span class="notification-count" aria-hidden="true"><?= $unreadNotifications > 99 ? '99+' : (int) $unreadNotifications ?></span><?php endif; ?>
+                    </a>
                     <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Activar modo oscuro" title="Activar modo oscuro">
                         <i class="bi bi-moon-stars-fill theme-toggle-icon" data-theme-icon aria-hidden="true"></i>
                     </button>
-                <div class="topbar-user">
-                    <span class="avatar"><?php if ($profilePhotoUrl !== null): ?><img src="<?= e($profilePhotoUrl) ?>" alt="" width="38" height="38"><?php else: ?><i class="bi <?= e($profileIcon) ?>" aria-hidden="true"></i><?php endif; ?></span>
-                    <div>
-                        <strong><?= e(($authUser['nombre'] ?? '') . ' ' . ($authUser['apellido'] ?? '')) ?></strong>
-                        <span><?= e($authUser['nombre_rol'] ?? '') ?></span>
+                <?php if (in_array($role, ['tutor', 'estudiante'], true)): ?>
+                    <a class="topbar-user topbar-profile-link" href="<?= e(app_url('mi-perfil/')) ?>" aria-label="Abrir mi perfil" title="Mi perfil">
+                        <span class="avatar"><?php if ($profilePhotoUrl !== null): ?><img src="<?= e($profilePhotoUrl) ?>" alt="" width="38" height="38"><?php else: ?><i class="bi <?= e($profileIcon) ?>" aria-hidden="true"></i><?php endif; ?></span>
+                        <span class="topbar-profile-copy">
+                            <strong><?= e(($authUser['nombre'] ?? '') . ' ' . ($authUser['apellido'] ?? '')) ?></strong>
+                            <span><?= e($authUser['nombre_rol'] ?? '') ?></span>
+                        </span>
+                        <i class="bi bi-chevron-right topbar-profile-chevron" aria-hidden="true"></i>
+                    </a>
+                <?php else: ?>
+                    <div class="topbar-user">
+                        <span class="avatar"><i class="bi <?= e($profileIcon) ?>" aria-hidden="true"></i></span>
+                        <div>
+                            <strong><?= e(($authUser['nombre'] ?? '') . ' ' . ($authUser['apellido'] ?? '')) ?></strong>
+                            <span><?= e($authUser['nombre_rol'] ?? '') ?></span>
+                        </div>
                     </div>
-                </div>
+                <?php endif; ?>
                 </div>
             </header>
 <?php else: ?>

@@ -27,19 +27,19 @@ Modulos disponibles:
 - `/usuarios/`, `/roles/`, `/carreras/` y `/materias/`: administracion general.
 - `/estudiantes/` y `/tutores/`: perfiles academicos y profesionales.
 - `/asignaciones/`: compatibilidad administrativa con asignaciones legacy; el flujo nuevo usa ofertas y selección directa.
-- `/disponibilidad/`: turnos universitarios seleccionados por tutores confirmados.
+- `/disponibilidad/`: ruta legacy que redirige a las materias ofertadas; al aceptar una oferta, el tutor confirma todos sus horarios.
 - `/tutorias/`: sesiones legacy y tutorias asignadas mediante inscripciones.
 - `/evaluaciones/`: evaluaciones de tutorias realizadas.
 - `/accesos/`: reporte de auditoria para administradores.
 - `/permisos/`: configuracion de accesos por rol y excepciones por usuario.
-- `/materias-disponibles/`: ofertas con tutores, horarios, aulas y cupos para estudiantes.
+- `/materias-disponibles/`: todas las ofertas publicadas vigentes, incluidas las que todavía esperan tutor; el estudiante puede registrarse durante el plazo y Administración asigna un tutor posteriormente.
 - `/tutores-disponibles/` y `/horarios-disponibles/`: rutas legacy que redirigen al catalogo integrado.
 - `/periodos/`, `/turnos/`, `/aulas/` y `/ofertas/`: planificacion academica administrada por la universidad; cada periodo pertenece a un tipo de tutoria y cada oferta define su turno, frecuencia, calendario, paralelo y aula.
-- `/solicitudes-tutor/`: revision administrativa de cuentas tutor pendientes de aprobación.
+- `/solicitudes/`: el estudiante solicita una materia no publicada para un periodo futuro y un turno preferido; Administración revisa, crea o vincula una oferta pendiente y la completa antes de publicarla.
 - `/inscripciones/`: seguimiento de inscripciones por estudiante, tutor y administrador.
-- `/postular-tutor.php`: postulación pública para cuentas tutor pendientes de aprobación.
+- `/postular-tutor.php`: ruta retirada; las cuentas y perfiles de tutor se gestionan desde Cuentas de acceso. Los registros históricos de `solicitudes_tutor` se conservan.
 - `/mi-perfil/`: perfil unificado de tutor y estudiante con foto de perfil.
-- `/materias-ofertadas/`: espacio del tutor para seleccionar materias ofertadas (antes `/mis-materias/`, redirige aquí).
+- `/materias-ofertadas/`: espacio del tutor para aceptar todas las materias publicadas y los horarios completos asignados; las bajas con estudiantes o sesiones pasan a revisión administrativa.
 - `/modalidades-grado/`: subsistema independiente para configuración inicial de Modalidades de Grado; sus roles y permisos granulares son propios y no transforman las tutorías existentes.
 
 ## Docker local
@@ -66,7 +66,7 @@ Los roles base son `administrador`, `tutor` y `estudiante`; Modalidades de Grado
 
 MG es un subsistema separado de `/tutorias/`; no reutiliza `tutorias`, bloques horarios ni estados de sesiones. La primera migración aditiva `db/030_mg_base.sql` crea roles, permisos granulares, parámetros configurables, modalidades, cohortes y hitos de calendario. Las pantallas de configuración están bajo `/modalidades-grado/`.
 
-Las migraciones de este repositorio siguen `db/001_*.sql` a `db/029_*.sql`; las nuevas migraciones MG continúan desde `030`. No existe `database/init.sql`: se conservan las migraciones manuales de `db/`. El dump local `docker/mysql/init/00-testdb.sql` es una instantánea de inicialización, no el historial de migraciones.
+Las migraciones de este repositorio siguen `db/001_*.sql` a `db/033_*.sql`; las migraciones MG comienzan en `030`. No existe `database/init.sql`: se conservan las migraciones manuales de `db/`. El dump local `docker/mysql/init/00-testdb.sql` es una instantánea de inicialización, no el historial de migraciones.
 
 Para aplicar la migración base al MySQL que corre en Docker, desde la raíz del proyecto:
 
@@ -83,10 +83,18 @@ Para cargar cohortes e hitos claramente identificados como demostración en un e
 ## Configuracion local o del servidor
 
 1. Copiar `.env.example` como `.env` en la raiz del proyecto.
-2. Configurar `DB_USER=biblioteca_user` y su contrasena real.
+2. Configurar `DB_USERNAME=biblioteca_user` y `DB_PASSWORD` con la contrasena de la cuenta de aplicacion.
 3. No subir `.env` a GitHub.
 
 El usuario `biblioteca_user` ya tiene permisos sobre `testdb`. La contrasena actual debe cambiarse porque fue expuesta durante la configuracion. La aplicacion no debe usar `admin_db`.
+
+## Despliegue del servicio web en Render
+
+PHP obtiene la conexión desde `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME` y `DB_PASSWORD`. En Render estas variables deben apuntar a una base MySQL alojada fuera de la computadora local. El contenedor `db` y el host `db` de Docker Compose solo existen dentro del entorno Docker local.
+
+Para compatibilidad, PHP y Docker Compose aceptan también `DB_NAME`/`DB_USER` y `MYSQL_APP_PASSWORD` como alias locales antiguos; una configuración nueva debe usar los nombres `DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD`.
+
+Las migraciones actuales seleccionan la base `testdb`; conservar ese nombre en la base externa permite aplicarlas sin modificar los scripts SQL. `MYSQL_ROOT_PASSWORD` solo inicializa el MySQL local de Docker y no se configura en el servicio web de Render.
 
 ## Base de datos
 
@@ -121,7 +129,12 @@ mysql -u biblioteca_user -p testdb < db/027_period_type_calendar.sql
 mysql -u biblioteca_user -p testdb < db/028_offer_calendar.sql
 mysql -u biblioteca_user -p testdb < db/029_period_tutoring_type.sql
 mysql -u biblioteca_user -p testdb < db/030_mg_base.sql
+mysql -u biblioteca_user -p testdb < db/031_solicitudes_apertura_materia.sql
+mysql -u biblioteca_user -p testdb < db/032_published_tutor_commitments.sql
+mysql -u biblioteca_user -p testdb < db/033_student_offer_registration.sql
 ```
+
+`solicitudes_apertura_materia` conserva periodo, materia, turno preferido y estado. Al aprobar, crea una oferta pendiente por combinación materia/periodo/turno o vincula una existente. Las ofertas pendientes son administrativas; una oferta publicada se muestra a estudiantes aunque todavía no tenga tutor. La migración 032 cambia internamente el estado de oferta `borrador` a `pendiente`, completa los horarios aceptados de tutores antiguos y crea el historial de bajas. La inscripción de estudiante se registra por oferta sin exigir tutor ni horario; Administración asigna un tutor confirmado después, y el tutor programa sesiones dentro del horario publicado. La migración 033 permite esas inscripciones sin asignación y conserva los vínculos de las inscripciones existentes. En Cuentas de acceso, crear una cuenta estudiante también crea su perfil de carrera y semestre; crear una cuenta tutor crea su perfil. El cambio de rol no elimina ni transforma perfiles existentes. El antiguo flujo de postulación de tutores está retirado; sus filas históricas en `solicitudes_tutor` no se eliminan.
 
 Antes de activar el login, generar un hash real y descomentar el `INSERT` del administrador en `db/002_seed.sql`:
 

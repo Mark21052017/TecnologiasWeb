@@ -1,6 +1,6 @@
 <?php require __DIR__ . '/../layouts/header.php'; ?>
 <main class="container mg-page">
-    <div class="page-heading"><div><span class="hero-kicker">Configuración MG</span><h1>Parámetros</h1><p>Los valores no confirmados se mantienen como propuestas o pendientes y no bloquean operaciones.</p></div><a class="btn btn-outline-secondary" href="<?= e(app_url('modalidades-grado/')) ?>">Volver a MG</a></div>
+    <div class="page-heading"><div><span class="hero-kicker">Configuración MG</span><h1>Parámetros</h1><p>Los valores no confirmados se mantienen como propuestas o pendientes y no bloquean operaciones.</p></div><a class="btn btn-outline-secondary" href="<?= e(app_url('modalidades-grado/configuracion.php')) ?>">Volver a Configuración</a></div>
     <?php if ($message): ?><p class="success" role="status"><?= e($message) ?></p><?php endif; ?>
     <?php if ($errors): ?><div class="alert" role="alert"><ul><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div><?php endif; ?>
     <section class="card mg-panel">

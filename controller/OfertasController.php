@@ -154,6 +154,9 @@ final class OfertasController
 
     public function selectAsTutor(int $userId, array $input): ?string
     {
+        if (($input['acepto_horarios'] ?? '') !== '1') {
+            return 'Confirma que aceptas cumplir todos los días y horarios de esta oferta.';
+        }
         $offerId = filter_var($input['id_oferta'] ?? null, FILTER_VALIDATE_INT);
         if ($offerId === false || $offerId < 1) {
             return 'Seleccione una oferta valida.';
@@ -166,6 +169,61 @@ final class OfertasController
             return 'Ya seleccionaste esta materia ofertada.';
         } catch (RuntimeException $exception) {
             return $exception->getMessage();
+        }
+    }
+
+    public function requestTutorWithdrawal(int $userId, array $input): array
+    {
+        $offerTutorId = filter_var($input['id_oferta_tutor'] ?? null, FILTER_VALIDATE_INT);
+        $reason = trim((string) ($input['motivo'] ?? ''));
+        if ($offerTutorId === false || $offerTutorId < 1) {
+            return [null, 'La asignación seleccionada no es válida.'];
+        }
+        if ($reason === '' || mb_strlen($reason) > 500 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $reason)) {
+            return [null, 'Indica el motivo de la baja (máximo 500 caracteres).'];
+        }
+        try {
+            return [$this->model->requestTutorWithdrawal($userId, (int) $offerTutorId, $reason), null];
+        } catch (RuntimeException $exception) {
+            return [null, $exception->getMessage()];
+        } catch (PDOException $exception) {
+            error_log($exception->getMessage());
+            return [null, 'No se pudo registrar la baja de la materia.'];
+        }
+    }
+
+    public function pendingTutorWithdrawals(): array
+    {
+        return $this->model->pendingTutorWithdrawals();
+    }
+
+    public function recentTutorWithdrawals(): array
+    {
+        return $this->model->recentTutorWithdrawals();
+    }
+
+    public function reviewTutorWithdrawal(array $input, int $reviewerId): ?string
+    {
+        $withdrawalId = filter_var($input['id_baja'] ?? null, FILTER_VALIDATE_INT);
+        $decision = trim((string) ($input['decision'] ?? ''));
+        $notes = trim((string) ($input['respuesta_admin'] ?? ''));
+        if ($withdrawalId === false || $withdrawalId < 1) {
+            return 'Seleccione una solicitud de baja válida.';
+        }
+        if (!in_array($decision, ['aprobada', 'rechazada'], true)) {
+            return 'Seleccione aprobar o rechazar la solicitud.';
+        }
+        if (mb_strlen($notes) > 500 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $notes)) {
+            return 'La respuesta no puede superar 500 caracteres ni contener caracteres no válidos.';
+        }
+        try {
+            $this->model->reviewTutorWithdrawal((int) $withdrawalId, $decision, $reviewerId, $notes);
+            return null;
+        } catch (InvalidArgumentException | RuntimeException $exception) {
+            return $exception->getMessage();
+        } catch (PDOException $exception) {
+            error_log($exception->getMessage());
+            return 'No se pudo resolver la solicitud de baja.';
         }
     }
 
@@ -205,7 +263,7 @@ final class OfertasController
             'nombre_grupo' => trim((string) ($input['nombre_grupo'] ?? 'Grupo A')),
             'cupo' => (int) ($input['cupo'] ?? 0),
             'descripcion' => trim((string) ($input['descripcion'] ?? '')),
-            'estado' => trim((string) ($input['estado'] ?? 'borrador')),
+            'estado' => trim((string) ($input['estado'] ?? 'pendiente')),
             'weekly_room' => (int) ($input['weekly_room'] ?? 0),
         ];
     }
@@ -297,7 +355,7 @@ final class OfertasController
         if (strlen($data['descripcion']) > 500) {
             $errors[] = 'La descripcion no puede superar 500 caracteres.';
         }
-        if (!in_array($data['estado'], ['borrador', 'publicada', 'cerrada', 'finalizada', 'cancelada'], true)) {
+        if (!in_array($data['estado'], ['pendiente', 'publicada', 'cerrada', 'finalizada', 'cancelada'], true)) {
             $errors[] = 'Seleccione un estado de oferta valido.';
         }
 

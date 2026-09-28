@@ -49,6 +49,14 @@ final class RegistroTutor
                 'especialidad' => $data['especialidad'],
                 'biografia' => $data['biografia'] !== '' ? $data['biografia'] : null,
             ]);
+            (new Notificacion())->notifyAdministrators(
+                $pdo,
+                'cuenta_tutor_pendiente',
+                'Nueva postulación como tutor',
+                $data['nombre'] . ' ' . $data['apellido'] . ' solicitó una cuenta de tutor y espera aprobación.',
+                'usuarios/?rol=tutor',
+                'tutor-registration:' . $userId
+            );
             $pdo->commit();
         } catch (Throwable $exception) {
             $pdo->rollBack();

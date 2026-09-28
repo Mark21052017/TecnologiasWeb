@@ -7,7 +7,7 @@ $title = 'Nueva oferta academica';
 $activePage = 'ofertas';
 $controller = new OfertasController();
 $options = $controller->options();
-$data = ['id_periodo' => '', 'id_carrera' => '', 'id_materia' => '', 'id_tipo_tutoria' => '', 'id_turno' => 0, 'frecuencia_programacion' => 'semanal', 'fechas' => [], 'nombre_grupo' => 'Grupo A', 'cupo' => 20, 'descripcion' => '', 'estado' => 'borrador', 'weekly_room' => 0, 'schedules' => []];
+$data = ['id_periodo' => '', 'id_carrera' => '', 'id_materia' => '', 'id_tipo_tutoria' => '', 'id_turno' => 0, 'frecuencia_programacion' => 'semanal', 'fechas' => [], 'nombre_grupo' => 'Grupo A', 'cupo' => 20, 'descripcion' => '', 'estado' => 'pendiente', 'weekly_room' => 0, 'schedules' => []];
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf_token($_POST['csrf_token'] ?? null)) {

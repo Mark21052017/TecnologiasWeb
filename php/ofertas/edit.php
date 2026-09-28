@@ -13,7 +13,7 @@ if (!$data) {
 $title = 'Editar oferta academica';
 $activePage = 'ofertas';
 $options = $controller->options();
-$message = (string) ($_GET['message'] ?? '') === 'group-created' ? 'Nuevo grupo creado como borrador con las mismas fechas y aula del grupo anterior. Verifique cupo y aula antes de publicarlo.' : null;
+$message = (string) ($_GET['message'] ?? '') === 'group-created' ? 'Nuevo grupo creado como pendiente con las mismas fechas y aula del grupo anterior. Verifique cupo y aula antes de publicarlo.' : null;
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf_token($_POST['csrf_token'] ?? null)) {

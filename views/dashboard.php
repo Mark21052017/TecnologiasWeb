@@ -99,10 +99,10 @@ $statValues = [
                 <a href="<?= e(app_url('materias/')) ?>"><span>MA</span><strong>Materias</strong><small>Asignaturas disponibles</small></a>
                 <a href="<?= e(app_url('periodos/')) ?>"><span>PE</span><strong>Periodos</strong><small>Fechas de tutorias</small></a>
                 <a href="<?= e(app_url('ofertas/')) ?>"><span>OF</span><strong>Ofertas</strong><small>Publicar materias</small></a>
-                <a href="<?= e(app_url('solicitudes-tutor/')) ?>"><span>ST</span><strong>Solicitudes</strong><small>Aprobar tutores</small></a>
+                <a href="<?= e(app_url('solicitudes/')) ?>"><span>SO</span><strong>Solicitudes</strong><small>Revisar apertura de materias</small></a>
                 <a href="<?= e(app_url('inscripciones/')) ?>"><span>IN</span><strong>Inscripciones</strong><small>Ver estudiantes inscritos</small></a>
-                <a href="<?= e(app_url('estudiantes/')) ?>"><span>ES</span><strong>Estudiantes</strong><small>Perfiles academicos</small></a>
-                <a href="<?= e(app_url('tutores/')) ?>"><span>TU</span><strong>Tutores</strong><small>Perfiles profesionales</small></a>
+                <a href="<?= e(app_url('usuarios/?rol=estudiante')) ?>"><span>ES</span><strong>Estudiantes</strong><small>Cuentas y perfiles académicos</small></a>
+                <a href="<?= e(app_url('usuarios/?rol=tutor')) ?>"><span>TU</span><strong>Tutores</strong><small>Cuentas y perfiles profesionales</small></a>
                 <a href="<?= e(app_url('accesos/')) ?>"><span>LG</span><strong>Accesos</strong><small>Auditoria del sistema</small></a>
                 <a href="<?= e(app_url('permisos/')) ?>"><span>PE</span><strong>Permisos</strong><small>Acceso por usuario y rol</small></a>
             </div>
@@ -113,8 +113,7 @@ $statValues = [
             <div class="section-heading"><h2>Explorar apoyo academico</h2><span class="eyebrow">Mi espacio</span></div>
             <div class="quick-links">
                 <a href="<?= e(app_url('materias-disponibles/')) ?>"><span>MA</span><strong>Materias</strong><small>Ver asignaturas disponibles</small></a>
-                <a href="<?= e(app_url('tutorias/')) ?>"><span>TI</span><strong>Mis tutorias</strong><small>Consultar inscripciones</small></a>
-                <a href="<?= e(app_url('evaluaciones/')) ?>"><span>EV</span><strong>Evaluaciones</strong><small>Ver mis resultados</small></a>
+                <a href="<?= e(app_url('evaluaciones/')) ?>"><span>EV</span><strong>Calificaciones</strong><small>Ver mis resultados</small></a>
             </div>
         </section>
     <?php endif; ?>

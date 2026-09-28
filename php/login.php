@@ -9,8 +9,10 @@ if (Auth::check()) {
 
 $error = flash_get('login_error');
 $success = ($_GET['registered'] ?? '') === '1'
-    ? 'Registro enviado. Un administrador debe aprobar tu cuenta antes de iniciar sesion.'
-    : (($_GET['tutor_registered'] ?? '') === '1' ? 'Postulacion enviada. Un administrador debe aprobar tu cuenta antes de iniciar sesion.' : null);
+    ? 'Registro enviado. Un administrador debe aprobar tu cuenta antes de iniciar sesión.'
+    : (($_GET['tutor_registered'] ?? '') === '1'
+        ? 'Postulación enviada. Un administrador debe aprobar tu cuenta desde Cuentas de acceso antes de que puedas iniciar sesión.'
+        : null);
 $username = (string) flash_get('login_username', '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

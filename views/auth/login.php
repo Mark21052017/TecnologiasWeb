@@ -41,7 +41,7 @@ require __DIR__ . '/../layouts/header.php';
                 <button class="btn btn-primary w-100" type="submit">Iniciar sesion <span aria-hidden="true">-&gt;</span></button>
             </form>
             <p class="auth-switch">¿Aun no tienes una cuenta? <a href="<?= e(app_url('register.php')) ?>">Registrate como estudiante</a></p>
-            <p class="auth-switch"><a href="<?= e(app_url('postular-tutor.php')) ?>">Postulate como tutor</a></p>
+            <p class="auth-switch"><a href="<?= e(app_url('postular-tutor.php')) ?>">Postular como tutor</a></p>
         </div>
     </section>
 </main>

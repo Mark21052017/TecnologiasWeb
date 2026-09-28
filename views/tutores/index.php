@@ -23,16 +23,17 @@
 
     <div class="table-wrapper card">
         <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Tutor</th><th>Correo</th><th>Especialidad</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>N.º</th><th>Tutor</th><th>Correo</th><th>Especialidad</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>
-                <?php foreach ($tutors as $tutor): ?>
+                <?php foreach ($tutors as $rowNumber => $tutor): ?>
                     <tr data-row>
+                        <td><?= $rowNumber + 1 ?></td>
                         <td><?= e($tutor['nombre'] . ' ' . $tutor['apellido']) ?></td>
                         <td><?= e($tutor['correo']) ?></td>
                         <td><?= e($tutor['especialidad'] ?: 'Sin especialidad') ?></td>
                         <td><span class="status status-<?= e($tutor['estado']) ?>"><?= e($tutor['estado']) ?></span></td>
                         <td class="actions">
-                            <a class="icon-action" href="<?= e(app_url('tutores/edit.php?id=' . (int) $tutor['id_tutor'])) ?>" title="Editar tutor" aria-label="Editar tutor"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar tutor</span></a>
+                            <a class="icon-action" href="<?= e(app_url('usuarios/edit.php?id=' . (int) $tutor['id_usuario'] . '&return_to=tutores')) ?>" title="Editar cuenta y perfil de tutor" aria-label="Editar cuenta y perfil de tutor"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar cuenta y perfil de tutor</span></a>
                             <form method="post" action="<?= e(app_url('tutores/delete.php')) ?>" onsubmit="return confirm('Eliminar este perfil?');">
                                 <input type="hidden" name="id" value="<?= (int) $tutor['id_tutor'] ?>">
                                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
@@ -41,8 +42,8 @@
                         </td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$tutors): ?><tr><td colspan="5">No hay tutores registrados. Cree primero un usuario con rol tutor.</td></tr><?php endif; ?>
-                <tr data-search-empty hidden><td colspan="5" class="empty-state">No se encontraron tutores.</td></tr>
+                <?php if (!$tutors): ?><tr><td colspan="6">No hay tutores registrados. Cree primero un usuario con rol tutor.</td></tr><?php endif; ?>
+                <tr data-search-empty hidden><td colspan="6" class="empty-state">No se encontraron tutores.</td></tr>
             </tbody>
         </table>
     </div>

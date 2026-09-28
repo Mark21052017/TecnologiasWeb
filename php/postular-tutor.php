@@ -3,7 +3,7 @@
 require dirname(__DIR__) . '/includes/bootstrap.php';
 
 if (Auth::check()) {
-    header('Location: ' . app_url('dashboard.php'));
+    header('Location: ' . app_url('dashboard.php'), true, 303);
     exit;
 }
 
@@ -20,15 +20,14 @@ $data = [
     'biografia' => '',
 ];
 $errors = [];
-$controller = new RegistroTutorController();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if (!verify_csrf_token($_POST['csrf_token'] ?? null)) {
-        $errors[] = 'La sesion del formulario no es valida. Recargue la pagina.';
+        $errors[] = 'La sesión del formulario no es válida. Recargue la página.';
     } else {
-        [$data, $errors] = $controller->register($_POST);
+        [$data, $errors] = (new RegistroTutorController())->register($_POST);
         if (!$errors) {
-            header('Location: ' . app_url('login.php?tutor_registered=1'));
+            header('Location: ' . app_url('login.php?tutor_registered=1'), true, 303);
             exit;
         }
     }

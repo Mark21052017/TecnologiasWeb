@@ -226,7 +226,17 @@ a {
     color: var(--accent-dark);
     font-size: 0.85rem;
     height: 38px;
+    overflow: hidden;
     width: 38px;
+}
+
+.avatar img {
+    border-radius: inherit;
+    display: block;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    width: 100%;
 }
 
 .avatar i {
@@ -477,11 +487,141 @@ a {
     padding-left: 1rem;
 }
 
+.topbar-profile-link {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    color: var(--ink);
+    gap: 0.65rem;
+    margin-left: 0.15rem;
+    padding: 0.25rem 0.6rem 0.25rem 0.3rem;
+    text-decoration: none;
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.topbar-profile-link:hover {
+    background: var(--surface);
+    border-color: var(--line);
+    color: var(--ink);
+}
+
+.topbar-profile-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.topbar-profile-copy {
+    min-width: 0;
+}
+
+.topbar-profile-copy strong {
+    color: var(--ink);
+    font-size: 0.78rem;
+    font-weight: 700;
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.topbar-profile-copy > span {
+    color: var(--muted) !important;
+    font-size: 0.66rem !important;
+    letter-spacing: 0.04em;
+    text-transform: capitalize;
+}
+
+.topbar-profile-chevron {
+    color: var(--muted);
+    font-size: 0.68rem;
+    transition: color 160ms ease, transform 160ms ease;
+}
+
+.topbar-profile-link:hover .topbar-profile-chevron {
+    color: var(--accent);
+    transform: translateX(2px);
+}
+
 .topbar-actions {
     align-items: center;
     display: flex;
     gap: 1rem;
     margin-left: auto;
+}
+
+.notification-toggle {
+    align-items: center;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--ink);
+    display: inline-flex;
+    height: 36px;
+    justify-content: center;
+    position: relative;
+    text-decoration: none;
+    width: 36px;
+}
+
+.notification-toggle:hover {
+    background: var(--accent-pale);
+    border-color: var(--accent);
+    color: var(--accent-dark);
+}
+
+.notification-count {
+    align-items: center;
+    background: #b42318;
+    border: 2px solid var(--surface);
+    border-radius: 999px;
+    color: #fff;
+    display: inline-flex;
+    font-size: 0.62rem;
+    font-weight: 800;
+    height: 18px;
+    justify-content: center;
+    line-height: 1;
+    min-width: 18px;
+    padding: 0 3px;
+    position: absolute;
+    right: -6px;
+    top: -6px;
+}
+
+.notification-list {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.notification-card {
+    align-items: flex-start;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    padding: 1rem 1.15rem;
+}
+
+.notification-card.is-unread {
+    border-left: 4px solid var(--accent);
+}
+
+.notification-card.is-read {
+    opacity: 0.78;
+}
+
+.notification-card h2 {
+    font-size: 1rem;
+    margin: 0.2rem 0 0.35rem;
+}
+
+.notification-card p {
+    margin: 0;
+}
+
+.notification-card-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .theme-toggle {
@@ -731,6 +871,23 @@ textarea {
     display: flex;
     justify-content: space-between;
     margin-bottom: 1rem;
+}
+
+.account-role-filter {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.account-role-filter label {
+    color: var(--muted);
+    margin: 0;
+    white-space: nowrap;
+}
+
+.account-role-filter select {
+    min-width: 10rem;
+    width: auto;
 }
 
 .table-meta {
@@ -1003,7 +1160,8 @@ tbody tr:hover {
     color: var(--status-muted-text);
 }
 
-.status-pendiente {
+.status-pendiente,
+.status-baja-solicitada {
     background: var(--status-pending-bg);
     color: var(--status-pending-text);
 }
@@ -1621,6 +1779,14 @@ tbody tr:hover {
     .search-field {
         max-width: none;
     }
+
+    .account-role-filter {
+        width: 100%;
+    }
+
+    .account-role-filter select {
+        flex: 1;
+    }
 }
 
 .profile-page {
@@ -1772,6 +1938,13 @@ tbody tr:hover {
     color: #b91c1c;
 }
 
+.account-photo-editor .profile-upload-button {
+    font-size: 0.78rem;
+    min-height: 2rem;
+    padding: 0.4rem 0.75rem;
+    width: auto;
+}
+
 .profile-photo-section small,
 .profile-details small {
     color: var(--muted);
@@ -1899,6 +2072,15 @@ tbody tr:hover {
     grid-template-columns: minmax(220px, 1.7fr) repeat(3, minmax(130px, 0.8fr)) auto;
     margin-bottom: 1.25rem;
     padding: 1rem;
+}
+
+.offer-filters.offer-turn-filter {
+    align-items: center;
+    grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
+}
+
+.offer-turn-filter .offer-filter-turnos {
+    min-width: 0;
 }
 
 .offer-filters label {
@@ -2441,6 +2623,176 @@ tbody tr:hover {
     width: 100%;
 }
 
+.offer-select-form button:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+}
+
+.offer-conflict-note {
+    align-items: flex-start;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 9px;
+    color: #9a3412;
+    display: flex;
+    font-size: 0.76rem;
+    gap: 0.45rem;
+    line-height: 1.45;
+    margin: 1rem 0 0.65rem;
+    padding: 0.7rem 0.8rem;
+}
+
+.offer-conflict-note i {
+    flex: 0 0 auto;
+    margin-top: 0.1rem;
+}
+
+.offer-commitment-check {
+    align-items: flex-start;
+    background: var(--surface-soft);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--ink);
+    display: flex;
+    font-size: 0.76rem;
+    gap: 0.55rem;
+    line-height: 1.45;
+    margin: 0.9rem 0 0.65rem;
+    padding: 0.7rem 0.8rem;
+}
+
+.offer-commitment-check input {
+    flex: 0 0 auto;
+    margin: 0.15rem 0 0;
+    width: auto;
+}
+
+.tutor-withdrawal-dialog {
+    border: 0;
+    border-radius: 16px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+    color: var(--ink);
+    max-height: calc(100vh - 2rem);
+    max-width: 38rem;
+    padding: 0;
+    width: calc(100% - 2rem);
+}
+
+.tutor-withdrawal-dialog::backdrop {
+    backdrop-filter: blur(3px);
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.tutor-withdrawal-dialog-content {
+    display: grid;
+    gap: 0.8rem;
+    padding: 1.4rem;
+}
+
+.tutor-withdrawal-dialog-content h2 {
+    font-size: 1.15rem;
+    margin: 0;
+}
+
+.tutor-withdrawal-dialog-content p {
+    color: var(--muted);
+    font-size: 0.84rem;
+    margin: 0;
+}
+
+.tutor-withdrawal-dialog-content dl {
+    background: var(--surface-soft);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    display: grid;
+    gap: 0.25rem 0.8rem;
+    grid-template-columns: max-content minmax(0, 1fr);
+    margin: 0;
+    padding: 0.75rem;
+}
+
+.tutor-withdrawal-dialog-content dt {
+    color: var(--muted);
+    font-size: 0.76rem;
+}
+
+.tutor-withdrawal-dialog-content dd {
+    font-size: 0.82rem;
+    font-weight: 650;
+    margin: 0;
+}
+
+.tutor-withdrawal-dialog-content label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.tutor-withdrawal-dialog-content .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    justify-content: flex-end;
+    margin-top: 0.25rem;
+}
+
+.student-offer-statuses {
+    align-items: flex-end;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.student-offer-statuses .table-profile-description {
+    flex-basis: 100%;
+    text-align: right;
+}
+
+.tutor-withdrawal-review-form {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 12rem;
+}
+
+.tutor-withdrawal-review-form .btn {
+    justify-self: start;
+    margin: 0;
+}
+
+.enrollment-assign-tutor-form {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+    min-width: 12rem;
+}
+
+.enrollment-assign-tutor-form button {
+    margin: 0;
+    width: 100%;
+}
+
+.student-offer-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.student-offer-register .offer-inline-note,
+.student-offer-register .success,
+.student-offer-register .empty-state {
+    margin: 0 0 0.75rem;
+}
+
+@media (max-width: 600px) {
+    .student-offer-statuses {
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
+
+    .student-offer-statuses .table-profile-description {
+        text-align: left;
+    }
+}
+
 .offer-empty {
     align-items: center;
     color: var(--muted);
@@ -2588,6 +2940,10 @@ tbody tr:hover {
     .offer-grid,
     .selected-offer-grid,
     .offer-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .offer-filters.offer-turn-filter {
         grid-template-columns: 1fr;
     }
 
@@ -3266,6 +3622,123 @@ tbody tr:hover {
 
 .mg-page table {
     min-width: 680px;
+}
+
+.request-page {
+    display: grid;
+    gap: 1rem;
+    padding-bottom: 2rem;
+}
+
+.request-page .page-heading {
+    margin-bottom: 0;
+}
+
+.request-panel {
+    padding: 1.15rem;
+}
+
+.request-panel h2 {
+    font-size: 1.05rem;
+    margin: 0 0 0.65rem;
+}
+
+.request-filter-form,
+.request-submit-form {
+    align-items: end;
+    display: grid;
+    gap: 0.8rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.request-filter-form > label,
+.request-submit-form > label {
+    display: grid;
+    font-size: 0.76rem;
+    font-weight: 650;
+    gap: 0.35rem;
+    margin: 0;
+}
+
+.request-filter-form .btn,
+.request-submit-form .btn {
+    justify-self: start;
+    margin: 0;
+}
+
+.request-submit-form > label:nth-of-type(2),
+.request-submit-form .btn {
+    grid-column: 1 / -1;
+}
+
+.request-submit-form textarea {
+    min-height: 5.5rem;
+}
+
+.request-review-form {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 11rem;
+}
+
+.request-review-form .btn {
+    justify-self: start;
+    margin: 0;
+}
+
+.request-reason {
+    font-size: 0.74rem;
+    margin-top: 0.25rem;
+}
+
+.request-reason summary {
+    color: var(--accent);
+    cursor: pointer;
+}
+
+@media (max-width: 700px) {
+    .request-page .page-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .request-filter-form,
+    .request-submit-form {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .request-submit-form > label:nth-of-type(2),
+    .request-submit-form .btn {
+        grid-column: auto;
+    }
+
+    .request-filter-form .btn,
+    .request-submit-form .btn {
+        justify-self: stretch;
+        width: 100%;
+    }
+}
+
+.account-profile-section {
+    border: 1px solid var(--line);
+    border-radius: 0.8rem;
+    margin: 0;
+    min-width: 0;
+    padding: 0.9rem 1rem 1rem;
+}
+
+.account-profile-section legend {
+    color: var(--ink);
+    float: none;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin: 0;
+    padding: 0 0.35rem;
+    width: auto;
+}
+
+.account-profile-section .form-grid {
+    margin-top: 0.4rem;
 }
 
 @media (max-width: 1050px) {

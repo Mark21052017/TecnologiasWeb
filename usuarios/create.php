@@ -6,6 +6,7 @@ $activePage = 'usuarios';
 
 $controller = new UsuariosController();
 $roles = $controller->roles();
+$careers = $controller->careers();
 $data = [
     'id_rol' => '',
     'nombre' => '',
@@ -15,6 +16,10 @@ $data = [
     'contrasena' => '',
     'telefono' => '',
     'estado' => 'activo',
+    'id_carrera' => '',
+    'semestre' => '',
+    'especialidad' => '',
+    'biografia' => '',
 ];
 $errors = [];
 

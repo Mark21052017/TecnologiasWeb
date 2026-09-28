@@ -25,5 +25,5 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
 $modalities = $controller->modalities();
 $title = 'Modalidades MG';
-$activePage = 'modalidades-grado';
+$activePage = 'mg-configuracion';
 require dirname(__DIR__, 2) . '/views/mg/modalidades.php';

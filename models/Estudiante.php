@@ -30,6 +30,18 @@ final class Estudiante
         return $student ?: null;
     }
 
+    public function findByUserId(int $userId): ?array
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT id_estudiante, id_usuario, id_carrera, semestre, registro_universitario
+             FROM estudiantes WHERE id_usuario = :id_usuario LIMIT 1'
+        );
+        $statement->execute(['id_usuario' => $userId]);
+        $student = $statement->fetch();
+
+        return $student ?: null;
+    }
+
     public function usersForForm(?int $currentUserId = null): array
     {
         $sql = <<<'SQL'

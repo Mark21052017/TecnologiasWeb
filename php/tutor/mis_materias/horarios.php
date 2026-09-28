@@ -7,6 +7,5 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf_token($_POST['csrf_tok
     http_response_code(400);
     exit('Solicitud no valida.');
 }
-$error = (new OfertasController())->setTutorSchedules((int) Auth::user()['id_usuario'], $_POST);
-header('Location: ' . app_url('materias-ofertadas/' . ($error ? '?error=' . rawurlencode($error) : '?message=saved')), true, 303);
+header('Location: ' . app_url('materias-ofertadas/?error=' . rawurlencode('El horario aceptado forma parte del compromiso y ya no se puede modificar desde esta página.')), true, 303);
 exit;

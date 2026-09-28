@@ -89,7 +89,7 @@ const setupTableSorting = () => {
         const headers = [...table.querySelectorAll('thead th')];
         const sortableHeaders = headers.filter((header) => {
             const label = header.textContent.trim();
-            return label !== '' && label.toLocaleLowerCase('es') !== 'acciones';
+            return label !== '' && label.toLocaleLowerCase('es') !== 'acciones' && header.dataset.sortable !== 'false';
         });
         const rows = () => [...table.querySelectorAll('tbody tr')].filter((row) => row.cells.length === headers.length);
 
@@ -205,6 +205,12 @@ const setupTablePagination = () => {
         const refresh = () => {
             const rows = dataRows();
             const filteredRows = rows.filter((row) => row.textContent.toLocaleLowerCase('es').includes(state.query));
+            const rowNumberIndex = headers.findIndex((header) => header.dataset.rowNumber === 'true');
+            if (rowNumberIndex >= 0) {
+                filteredRows.forEach((row, index) => {
+                    row.cells[rowNumberIndex].textContent = String(index + 1);
+                });
+            }
             const totalPages = state.pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filteredRows.length / state.pageSize));
             state.page = Math.min(state.page, totalPages);
             const firstIndex = state.pageSize === 'all' ? 0 : (state.page - 1) * state.pageSize;
@@ -728,6 +734,60 @@ const setupSidebarSections = () => {
     });
 };
 
+const setupAccountProfileFields = () => {
+    document.querySelectorAll('form').forEach((form) => {
+        const roleSelect = form.querySelector('[data-account-role]');
+        const profileSections = [...form.querySelectorAll('[data-account-profile-section]')];
+        if (!roleSelect || !profileSections.length) return;
+
+        const refresh = () => {
+            const roleName = roleSelect.selectedOptions[0]?.dataset.roleName ?? '';
+            profileSections.forEach((section) => {
+                const visible = section.dataset.accountProfileSection === roleName;
+                section.hidden = !visible;
+                section.querySelectorAll('[data-account-profile-field]').forEach((field) => {
+                    field.disabled = !visible;
+                    field.required = visible && field.dataset.accountProfileRequired === 'true';
+                });
+            });
+        };
+
+        roleSelect.addEventListener('change', refresh);
+        refresh();
+    });
+};
+
+const setupTutorWithdrawalDialog = () => {
+    const dialog = document.querySelector('[data-tutor-withdrawal-dialog]');
+    if (!dialog) return;
+
+    const idField = dialog.querySelector('[data-tutor-withdrawal-id]');
+    const subject = dialog.querySelector('[data-tutor-withdrawal-subject]');
+    const period = dialog.querySelector('[data-tutor-withdrawal-period]');
+    const turno = dialog.querySelector('[data-tutor-withdrawal-turn]');
+    const reason = dialog.querySelector('textarea[name="motivo"]');
+
+    document.querySelectorAll('[data-tutor-withdrawal-open]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const form = dialog.querySelector('form');
+            form?.reset();
+            if (idField) idField.value = button.dataset.idOfertaTutor ?? '';
+            if (subject) subject.textContent = button.dataset.materia ?? '';
+            if (period) period.textContent = button.dataset.periodo ?? '';
+            if (turno) turno.textContent = button.dataset.turno ?? '';
+            dialog.showModal();
+            reason?.focus();
+        });
+    });
+
+    dialog.querySelectorAll('[data-tutor-withdrawal-close]').forEach((button) => {
+        button.addEventListener('click', () => dialog.close());
+    });
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+    });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     if (document.body.dataset.requestMethod === 'POST' && window.history.replaceState) {
         window.history.replaceState(null, document.title, window.location.href);
@@ -824,6 +884,17 @@ document.addEventListener('DOMContentLoaded', () => {
         search.addEventListener('input', () => {
             window.clearTimeout(searchTimer);
             searchTimer = window.setTimeout(() => pagination.setQuery(search.value), 120);
+        });
+        if (search.value.trim() !== '') {
+            pagination.setQuery(search.value);
+        }
+    });
+
+    document.querySelectorAll('[data-account-role-filter]').forEach((form) => {
+        const search = form.closest('main')?.querySelector('[data-table-search]');
+        const searchState = form.querySelector('[data-account-role-search]');
+        form.addEventListener('submit', () => {
+            if (searchState) searchState.value = search?.value ?? '';
         });
     });
 
@@ -970,4 +1041,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setupOfferCalendar();
     setupOfferCareerFiltering();
     setupOfferRoomAvailability();
+    setupAccountProfileFields();
+    setupTutorWithdrawalDialog();
 });

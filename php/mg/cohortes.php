@@ -34,5 +34,5 @@ $cohort = $id !== false && $id !== null ? $controller->cohort((int) $id) : null;
 $cohorts = $controller->cohorts();
 $canManage = in_array(Auth::user()['nombre_rol'], ['administrador', 'coordinador_mg'], true);
 $title = 'Cohortes MG';
-$activePage = 'modalidades-grado';
+$activePage = 'mg-cohortes';
 require dirname(__DIR__, 2) . '/views/mg/cohortes.php';

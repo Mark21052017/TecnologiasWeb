@@ -38,11 +38,14 @@ final class SolicitudTutor
         $pdo = Database::connection();
         $pdo->beginTransaction();
         try {
-            $statement = $pdo->prepare('SELECT id_usuario, especialidad, biografia FROM solicitudes_tutor WHERE id_solicitud = :id FOR UPDATE');
+            $statement = $pdo->prepare('SELECT id_usuario, especialidad, biografia, estado FROM solicitudes_tutor WHERE id_solicitud = :id FOR UPDATE');
             $statement->execute(['id' => $id]);
             $request = $statement->fetch();
             if (!$request) {
                 throw new RuntimeException('La solicitud no existe.');
+            }
+            if ($request['estado'] !== 'pendiente') {
+                throw new RuntimeException('La solicitud ya fue revisada.');
             }
 
             $newUserState = $status === 'aprobada' ? 'activo' : 'inactivo';
@@ -59,6 +62,17 @@ final class SolicitudTutor
                 'biografia' => $request['biografia'],
                 'id_usuario' => $request['id_usuario'],
             ]);
+            (new Notificacion())->add(
+                $pdo,
+                (int) $request['id_usuario'],
+                'postulacion_tutor_' . $status,
+                $status === 'aprobada' ? 'Postulación de tutor aprobada' : 'Postulación de tutor rechazada',
+                $status === 'aprobada'
+                    ? 'Administración aprobó tu postulación de tutor. Ya puedes ingresar al portal.'
+                    : 'Administración rechazó tu postulación de tutor.',
+                'login.php',
+                'tutor-application-review:' . $id . ':' . $status
+            );
             $pdo->commit();
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {

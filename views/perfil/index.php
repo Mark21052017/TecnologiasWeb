@@ -4,7 +4,7 @@
     <div class="page-heading profile-heading">
         <div>
             <span class="profile-title-icon"><i class="bi bi-person-circle" aria-hidden="true"></i></span>
-            <div><h1>Mi Perfil</h1><p>Administra tus datos personales y la seguridad de tu cuenta.</p></div>
+            <div><h1><?= e($role === 'estudiante' ? 'Mi perfil de estudiante' : 'Mi perfil de tutor') ?></h1><p><?php if ($role === 'estudiante'): ?>Actualiza tus datos personales y tu foto. La información académica es administrada por la universidad.<?php else: ?>Administra tus datos personales y la seguridad de tu cuenta.<?php endif; ?></p></div>
         </div>
         <a class="button secondary profile-back" href="<?= e(app_url('dashboard.php')) ?>"><i class="bi bi-arrow-left" aria-hidden="true"></i> Volver</a>
     </div>
@@ -73,7 +73,7 @@
                     <textarea id="biografia" name="biografia" maxlength="2000" rows="5"><?= e($data['biografia']) ?></textarea>
                 <?php else: ?>
                     <div class="profile-section-divider"></div>
-                    <div class="profile-section-heading"><i class="bi bi-mortarboard" aria-hidden="true"></i><div><h2>Información académica</h2><p>Datos administrados por la universidad.</p></div></div>
+                    <div class="profile-section-heading"><i class="bi bi-mortarboard" aria-hidden="true"></i><div><h2>Información académica</h2><p>La carrera, el semestre y el registro universitario son administrados por la universidad. Para solicitar una corrección, comunícate con Administración.</p></div></div>
                     <div class="form-grid">
                         <div><label for="carrera">Carrera</label><input id="carrera" type="text" readonly value="<?= e($profile['nombre_carrera'] ?? 'Sin carrera asignada') ?>"></div>
                         <div><label for="semestre">Semestre</label><input id="semestre" type="text" readonly value="<?= e($profile['semestre'] ?? '') ?>"></div>

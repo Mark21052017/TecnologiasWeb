@@ -10,7 +10,11 @@ final class Tutoria
             SELECT t.id_tutoria, t.id_inscripcion, t.id_estudiante, t.id_tutor, t.id_materia,
                    t.fecha, t.hora_inicio, t.hora_fin, t.modalidad,
                    t.lugar_o_enlace, t.estado, t.observaciones, t.fecha_solicitud,
-                    oh.dia_semana, b.id_turno, b.nombre_turno,
+                    COALESCE(oh.dia_semana, CASE DAYOFWEEK(t.fecha)
+                        WHEN 2 THEN 'Lunes' WHEN 3 THEN 'Martes' WHEN 4 THEN 'Miercoles'
+                        WHEN 5 THEN 'Jueves' WHEN 6 THEN 'Viernes' WHEN 7 THEN 'Sabado'
+                        ELSE 'Domingo' END) AS dia_semana,
+                    b.id_turno, b.nombre_turno,
                    CONCAT(eu.nombre, ' ', eu.apellido) AS estudiante,
                    CONCAT(tu.nombre, ' ', tu.apellido) AS tutor,
                    m.nombre_materia
@@ -91,38 +95,38 @@ final class Tutoria
     {
         $statement = Database::connection()->prepare(
             "SELECT i.id_inscripcion, i.id_estudiante, i.id_oferta, i.id_oferta_tutor,
+                    oh.id_oferta_horario,
                     p.nombre_periodo, p.fecha_inicio, p.fecha_fin,
                     m.nombre_materia, o.nombre_grupo,
                     CONCAT(eu.nombre, ' ', eu.apellido) AS estudiante,
                     oh.dia_semana, b.nombre_turno, b.hora_inicio, b.hora_fin,
                     a.nombre_aula, a.ubicacion,
-                    COUNT(ts.id_tutoria) AS sesiones_programadas
+                    (SELECT COUNT(*) FROM tutorias ts
+                     WHERE ts.id_inscripcion = i.id_inscripcion AND ts.estado <> 'cancelada') AS sesiones_programadas
              FROM inscripciones_tutoria i
              INNER JOIN ofertas_tutoria o ON o.id_oferta = i.id_oferta
              INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
              INNER JOIN materias m ON m.id_materia = o.id_materia
-             INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor
+             INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor AND ot.estado = 'confirmada'
              INNER JOIN tutores tr ON tr.id_tutor = ot.id_tutor
              INNER JOIN usuarios tu ON tu.id_usuario = tr.id_usuario
              INNER JOIN estudiantes e ON e.id_estudiante = i.id_estudiante
              INNER JOIN usuarios eu ON eu.id_usuario = e.id_usuario
-             INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = i.id_oferta_horario
-              INNER JOIN turnos b ON b.id_turno = o.id_turno
+             INNER JOIN oferta_tutor_horarios accepted_schedule ON accepted_schedule.id_oferta_tutor = ot.id_oferta_tutor
+             INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = accepted_schedule.id_oferta_horario
+                AND oh.id_oferta = o.id_oferta
+                AND (i.id_oferta_horario IS NULL OR i.id_oferta_horario = oh.id_oferta_horario)
+             INNER JOIN turnos b ON b.id_turno = o.id_turno
              LEFT JOIN aulas a ON a.id_aula = oh.id_aula
-             LEFT JOIN tutorias ts ON ts.id_inscripcion = i.id_inscripcion AND ts.estado <> 'cancelada'
              WHERE tu.id_usuario = :id_usuario AND i.estado = 'inscrita'
-             GROUP BY i.id_inscripcion, i.id_estudiante, i.id_oferta, i.id_oferta_tutor,
-                      p.nombre_periodo, p.fecha_inicio, p.fecha_fin, m.nombre_materia,
-                      o.nombre_grupo, eu.nombre, eu.apellido, oh.dia_semana,
-                       b.nombre_turno, b.hora_inicio, b.hora_fin, a.nombre_aula, a.ubicacion
-             ORDER BY p.fecha_inicio DESC, m.nombre_materia, estudiante"
+             ORDER BY p.fecha_inicio DESC, m.nombre_materia, estudiante, FIELD(oh.dia_semana,'Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'), b.hora_inicio"
         );
         $statement->execute(['id_usuario' => $userId]);
 
         return $statement->fetchAll();
     }
 
-    public function enrollmentForTutor(int $enrollmentId, int $userId): ?array
+    public function enrollmentForTutor(int $enrollmentId, int $offerScheduleId, int $userId): ?array
     {
         $statement = Database::connection()->prepare(
             "SELECT i.id_inscripcion, i.id_estudiante, i.id_oferta, i.estado AS inscripcion_estado,
@@ -133,48 +137,66 @@ final class Tutoria
              INNER JOIN ofertas_tutoria o ON o.id_oferta = i.id_oferta
              INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
              INNER JOIN materias m ON m.id_materia = o.id_materia
-             INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor
+             INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor AND ot.estado = 'confirmada'
              INNER JOIN tutores tr ON tr.id_tutor = ot.id_tutor
              INNER JOIN usuarios tu ON tu.id_usuario = tr.id_usuario
-             INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = i.id_oferta_horario
-              INNER JOIN turnos b ON b.id_turno = o.id_turno
+             INNER JOIN oferta_tutor_horarios accepted_schedule
+                ON accepted_schedule.id_oferta_tutor = ot.id_oferta_tutor
+               AND accepted_schedule.id_oferta_horario = :id_oferta_horario
+             INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = accepted_schedule.id_oferta_horario
+               AND oh.id_oferta = o.id_oferta
+               AND (i.id_oferta_horario IS NULL OR i.id_oferta_horario = oh.id_oferta_horario)
+             INNER JOIN turnos b ON b.id_turno = o.id_turno
              LEFT JOIN aulas a ON a.id_aula = oh.id_aula
              WHERE i.id_inscripcion = :id_inscripcion
                AND i.estado = 'inscrita'
-               AND tu.id_usuario = :id_usuario
+                AND tu.id_usuario = :id_usuario
              LIMIT 1"
         );
-        $statement->execute(['id_inscripcion' => $enrollmentId, 'id_usuario' => $userId]);
+        $statement->execute([
+            'id_inscripcion' => $enrollmentId,
+            'id_oferta_horario' => $offerScheduleId,
+            'id_usuario' => $userId,
+        ]);
         $enrollment = $statement->fetch();
 
         return $enrollment ?: null;
     }
 
-    public function createFromEnrollment(int $enrollmentId, int $userId, array $data): void
+    public function createFromEnrollment(int $enrollmentId, int $offerScheduleId, int $userId, array $data): void
     {
         $pdo = Database::connection();
         $pdo->beginTransaction();
         try {
             $statement = $pdo->prepare(
                 "SELECT i.id_inscripcion, i.id_estudiante, i.id_oferta, p.fecha_inicio, p.fecha_fin,
-                        m.id_materia, ot.id_tutor, oh.dia_semana,
+                        m.id_materia, m.nombre_materia, ot.id_tutor, oh.dia_semana,
                         b.hora_inicio, b.hora_fin, a.nombre_aula, a.ubicacion
                  FROM inscripciones_tutoria i
                  INNER JOIN ofertas_tutoria o ON o.id_oferta = i.id_oferta
                  INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
                  INNER JOIN materias m ON m.id_materia = o.id_materia
-                 INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor
+                 INNER JOIN oferta_tutores ot ON ot.id_oferta_tutor = i.id_oferta_tutor AND ot.estado = 'confirmada'
                  INNER JOIN tutores tr ON tr.id_tutor = ot.id_tutor
                  INNER JOIN usuarios tu ON tu.id_usuario = tr.id_usuario
-                 INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = i.id_oferta_horario
-                  INNER JOIN turnos b ON b.id_turno = o.id_turno
+                 INNER JOIN oferta_tutor_horarios accepted_schedule
+                    ON accepted_schedule.id_oferta_tutor = ot.id_oferta_tutor
+                   AND accepted_schedule.id_oferta_horario = :id_oferta_horario
+                 INNER JOIN oferta_horarios oh ON oh.id_oferta_horario = accepted_schedule.id_oferta_horario
+                   AND oh.id_oferta = o.id_oferta
+                   AND (i.id_oferta_horario IS NULL OR i.id_oferta_horario = oh.id_oferta_horario)
+                 INNER JOIN turnos b ON b.id_turno = o.id_turno
                  LEFT JOIN aulas a ON a.id_aula = oh.id_aula
                  WHERE i.id_inscripcion = :id_inscripcion
                    AND i.estado = 'inscrita'
                    AND tu.id_usuario = :id_usuario
                  LIMIT 1 FOR UPDATE"
             );
-            $statement->execute(['id_inscripcion' => $enrollmentId, 'id_usuario' => $userId]);
+            $statement->execute([
+                'id_inscripcion' => $enrollmentId,
+                'id_oferta_horario' => $offerScheduleId,
+                'id_usuario' => $userId,
+            ]);
             $enrollment = $statement->fetch();
             if (!$enrollment) {
                 throw new RuntimeException('La inscripcion no existe, no esta activa o no pertenece al tutor.');
@@ -245,6 +267,14 @@ final class Tutoria
                 'lugar_o_enlace' => $place !== '' ? $place : null,
                 'observaciones' => $data['observaciones'] !== '' ? $data['observaciones'] : null,
             ]);
+            $tutoriaId = (int) $pdo->lastInsertId();
+            $studentUser = $pdo->prepare('SELECT id_usuario FROM estudiantes WHERE id_estudiante = :id LIMIT 1');
+            $studentUser->execute(['id' => (int) $enrollment['id_estudiante']]);
+            (new Notificacion())->add(
+                $pdo, (int) $studentUser->fetchColumn(), 'sesion_propuesta', 'Nueva sesión propuesta',
+                'Tu tutor propuso una sesión de ' . $enrollment['nombre_materia'] . ' para el ' . $data['fecha'] . '. Confirma o responde desde tus tutorías.',
+                'tutorias/', 'tutoria-session-proposed:' . $tutoriaId
+            );
             $pdo->commit();
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {
@@ -412,18 +442,57 @@ final class Tutoria
 
     public function changeStatus(int $id, string $status, string $role, int $userId, string $currentState): bool
     {
-        $sql = 'UPDATE tutorias SET estado = :estado WHERE id_tutoria = :id_tutoria AND estado = :estado_actual';
-        $params = ['estado' => $status, 'id_tutoria' => $id, 'estado_actual' => $currentState];
-        if ($role === 'tutor') {
-            $sql .= ' AND id_tutor = (SELECT id_tutor FROM tutores WHERE id_usuario = :id_usuario)';
-            $params['id_usuario'] = $userId;
-        } elseif ($role === 'estudiante') {
-            $sql .= ' AND id_estudiante = (SELECT id_estudiante FROM estudiantes WHERE id_usuario = :id_usuario)';
-            $params['id_usuario'] = $userId;
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $sql = 'UPDATE tutorias SET estado = :estado WHERE id_tutoria = :id_tutoria AND estado = :estado_actual';
+            $params = ['estado' => $status, 'id_tutoria' => $id, 'estado_actual' => $currentState];
+            if ($role === 'tutor') {
+                $sql .= ' AND id_tutor = (SELECT id_tutor FROM tutores WHERE id_usuario = :id_usuario)';
+                $params['id_usuario'] = $userId;
+            } elseif ($role === 'estudiante') {
+                $sql .= ' AND id_estudiante = (SELECT id_estudiante FROM estudiantes WHERE id_usuario = :id_usuario)';
+                $params['id_usuario'] = $userId;
+            }
+            $statement = $pdo->prepare($sql);
+            $statement->execute($params);
+            if ($statement->rowCount() < 1) {
+                $pdo->rollBack();
+                return false;
+            }
+            $participants = $pdo->prepare(
+                'SELECT e.id_usuario AS student_user_id, tr.id_usuario AS tutor_user_id, m.nombre_materia
+                 FROM tutorias t
+                 INNER JOIN estudiantes e ON e.id_estudiante = t.id_estudiante
+                 INNER JOIN tutores tr ON tr.id_tutor = t.id_tutor
+                 INNER JOIN materias m ON m.id_materia = t.id_materia
+                 WHERE t.id_tutoria = :id LIMIT 1'
+            );
+            $participants->execute(['id' => $id]);
+            $row = $participants->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                $pdo->rollBack();
+                return false;
+            }
+            $recipients = $role === 'estudiante'
+                ? [(int) $row['tutor_user_id']]
+                : ($role === 'tutor' ? [(int) $row['student_user_id']] : [(int) $row['student_user_id'], (int) $row['tutor_user_id']]);
+            $titles = ['confirmada' => 'Sesión confirmada', 'cancelada' => 'Sesión cancelada', 'realizada' => 'Sesión completada'];
+            $title = $titles[$status] ?? 'Actualización de sesión';
+            foreach (array_unique($recipients) as $recipientId) {
+                (new Notificacion())->add(
+                    $pdo, $recipientId, 'estado_sesion', $title,
+                    'La sesión de ' . $row['nombre_materia'] . ' cambió de ' . $currentState . ' a ' . $status . '.',
+                    'tutorias/', 'tutoria-status:' . $id . ':' . $currentState . ':' . $status . ':' . $recipientId
+                );
+            }
+            $pdo->commit();
+            return true;
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
         }
-        $statement = Database::connection()->prepare($sql);
-        $statement->execute($params);
-
-        return $statement->rowCount() > 0;
     }
 }

@@ -16,8 +16,10 @@ $controller = new OfertasController();
 $subjects = $controller->tutorOffers($userId);
 $availableSubjects = $controller->availableForTutor($userId);
 $messages = [
-    'added' => 'Materia seleccionada correctamente. Ya puedes configurar tu disponibilidad.',
-    'saved' => 'Disponibilidad para la oferta actualizada correctamente.',
+    'added' => 'Materia aceptada. Confirmaste el compromiso de todos los días y horarios indicados.',
+    'withdrawn' => 'La asignación se canceló y quedó registrada en el historial.',
+    'withdrawal-requested' => 'Tu solicitud de baja fue enviada a Administración para revisión y coordinación del reemplazo.',
+    'replacement-needed' => 'El tutor anterior solicitó la baja. Puedes aceptar esta materia como reemplazo.',
 ];
 $message = $messages[$_GET['message'] ?? ''] ?? null;
 $error = isset($_GET['error']) && is_string($_GET['error']) ? $_GET['error'] : null;

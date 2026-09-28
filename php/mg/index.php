@@ -8,12 +8,14 @@ $role = (string) ($user['nombre_rol'] ?? '');
 $controller = new MgConfiguracionController();
 $mode = 'own';
 $summary = [];
+$adminSummary = [];
 $cohorts = [];
 
 if ($role === 'administrador') {
     requerirPermiso('mg.configuracion.ver');
     $mode = 'admin';
     $summary = $controller->summary();
+    $adminSummary = (new MgAcademicoController())->administrativeSummary();
 } elseif ($role === 'coordinador_mg') {
     requerirRol(['coordinador_mg']);
     requerirPermiso('mg.configuracion.ver');
@@ -27,11 +29,14 @@ if ($role === 'administrador') {
 } elseif ($role === 'tutor' || $role === 'estudiante') {
     requerirRol([$role]);
     requerirPermiso('mg.calendario.ver_propio');
+    if ($role === 'estudiante') {
+        requerirPermiso('mg.academico.verificar');
+    }
 } else {
     http_response_code(403);
     exit('El rol actual no tiene acceso a Modalidades de Grado.');
 }
 
 $title = 'Modalidades de Grado';
-$activePage = 'modalidades-grado';
+$activePage = 'mg-resumen';
 require dirname(__DIR__, 2) . '/views/mg/index.php';

@@ -21,6 +21,11 @@ final class UsuariosController
         return $this->model->roles();
     }
 
+    public function careers(): array
+    {
+        return (new Estudiante())->careers();
+    }
+
     public function find(int $id): ?array
     {
         return $this->model->findById($id);
@@ -46,6 +51,8 @@ final class UsuariosController
         } catch (PDOException $exception) {
             error_log($exception->getMessage());
             return [$data, ['El correo o el usuario ya pueden estar registrados.']];
+        } catch (RuntimeException $exception) {
+            return [$data, [$exception->getMessage()]];
         }
     }
 
@@ -55,9 +62,19 @@ final class UsuariosController
         if ($this->isProtectedAdmin($id)) {
             return [$data, ['La cuenta admin esta protegida y no puede modificarse.']];
         }
-        $errors = $this->validate($data, true);
+        $current = $this->model->findById($id);
+        $errors = $this->validate($data, true, $current ?: null);
 
         if ($errors) {
+            $newRoleId = filter_var($data['id_rol'], FILTER_VALIDATE_INT);
+            if ($current && $newRoleId !== false && (int) $current['id_rol'] !== (int) $newRoleId
+                && (!empty($current['id_estudiante']) || !empty($current['id_tutor']))) {
+                $data['id_rol'] = (string) $current['id_rol'];
+                $data['id_carrera'] = (string) ($current['id_carrera'] ?? '');
+                $data['semestre'] = (string) ($current['semestre'] ?? '');
+                $data['especialidad'] = (string) ($current['especialidad'] ?? '');
+                $data['biografia'] = (string) ($current['biografia'] ?? '');
+            }
             return [$data, $errors];
         }
 
@@ -98,7 +115,8 @@ final class UsuariosController
         }
 
         try {
-            return $this->model->activate($id) ? null : 'La cuenta ya estaba activa o no existe.';
+            $reviewerId = (int) (Auth::user()['id_usuario'] ?? 0);
+            return $this->model->activate($id, $reviewerId > 0 ? $reviewerId : null) ? null : 'La cuenta ya estaba activa o no existe.';
         } catch (PDOException $exception) {
             error_log($exception->getMessage());
             return 'No fue posible activar la cuenta.';
@@ -117,16 +135,24 @@ final class UsuariosController
             'confirmacion' => (string) ($input['confirmacion'] ?? ''),
             'telefono' => trim((string) ($input['telefono'] ?? '')),
             'estado' => trim((string) ($input['estado'] ?? 'activo')),
+            'id_carrera' => trim((string) ($input['id_carrera'] ?? '')),
+            'semestre' => trim((string) ($input['semestre'] ?? '')),
+            'especialidad' => trim((string) ($input['especialidad'] ?? '')),
+            'biografia' => trim((string) ($input['biografia'] ?? '')),
         ];
     }
 
-    private function validate(array $data, bool $editing): array
+    private function validate(array $data, bool $editing, ?array $current = null): array
     {
         $errors = [];
         $roleId = filter_var($data['id_rol'], FILTER_VALIDATE_INT);
+        $roleName = $roleId !== false && $roleId > 0 ? $this->model->roleName((int) $roleId) : null;
 
-        if ($roleId === false || $roleId < 1) {
+        if ($roleName === null) {
             $errors[] = 'Seleccione un rol valido.';
+        } elseif ($editing && $current && $current['nombre_rol'] !== $roleName
+            && (!empty($current['id_estudiante']) || !empty($current['id_tutor']))) {
+            $errors[] = 'No se puede cambiar el rol de una cuenta con perfil académico. Conserve el rol o cree otra cuenta.';
         }
         foreach ([['value' => $data['nombre'], 'label' => 'nombre'], ['value' => $data['apellido'], 'label' => 'apellido']] as $personField) {
             $error = validation_name($personField['value'], $personField['label']);
@@ -156,6 +182,24 @@ final class UsuariosController
         }
         if (!in_array($data['estado'], ['pendiente', 'activo', 'inactivo'], true)) {
             $errors[] = 'Seleccione un estado valido.';
+        }
+
+        if ($roleName === 'estudiante') {
+            $careerId = filter_var($data['id_carrera'], FILTER_VALIDATE_INT);
+            $semester = filter_var($data['semestre'], FILTER_VALIDATE_INT);
+            if ($careerId === false || $careerId < 1 || !(new Estudiante())->careerExists((int) $careerId)) {
+                $errors[] = 'Seleccione una carrera válida para el perfil del estudiante.';
+            }
+            if ($semester === false || $semester < 1 || $semester > 20) {
+                $errors[] = 'El semestre del estudiante debe estar entre 1 y 20.';
+            }
+        } elseif ($roleName === 'tutor') {
+            if (mb_strlen($data['especialidad']) > 150) {
+                $errors[] = 'La especialidad no puede superar 150 caracteres.';
+            }
+            if (mb_strlen($data['biografia']) > 2000 || preg_match('/[\x00-\x1F\x7F]/', $data['biografia'])) {
+                $errors[] = 'La biografía no puede superar 2000 caracteres ni contener caracteres no válidos.';
+            }
         }
 
         return $errors;

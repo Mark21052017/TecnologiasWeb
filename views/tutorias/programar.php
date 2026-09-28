@@ -5,23 +5,23 @@
         <div class="page-heading">
             <div>
                 <h1>Programar sesion</h1>
-                <p>Seleccione una inscripcion activa y programe una sesion concreta.</p>
+                <p>Selecciona una inscripción y un horario publicado de la materia para esta sesión.</p>
             </div>
         </div>
         <?php if (!empty($errors)): ?><div class="alert" role="alert"><ul><?php foreach ($errors as $formError): ?><li><?= e($formError) ?></li><?php endforeach; ?></ul></div><?php endif; ?>
-        <?php if (!$enrollments): ?><p class="empty-state">No tiene estudiantes inscritos disponibles para programar.</p><?php endif; ?>
+        <?php if (!$enrollments): ?><p class="empty-state">No tiene estudiantes inscritos con tutor asignado y horarios confirmados.</p><?php endif; ?>
         <form method="post" action="<?= e(app_url('tutorias/programar.php')) ?>">
             <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
             <div class="form-grid">
                 <div class="form-full">
-                    <label for="id_inscripcion">Estudiante e inscripcion</label>
-                    <select id="id_inscripcion" name="id_inscripcion" required <?= !$enrollments ? 'disabled' : '' ?>>
+                    <label for="id_inscripcion_horario">Estudiante, materia y horario</label>
+                    <select id="id_inscripcion_horario" name="id_inscripcion_horario" required <?= !$enrollments ? 'disabled' : '' ?>>
                         <option value="">Seleccione</option>
-                        <?php foreach ($enrollments as $enrollment): ?>
-                            <option value="<?= (int) $enrollment['id_inscripcion'] ?>" <?= (string) $data['id_inscripcion'] === (string) $enrollment['id_inscripcion'] ? 'selected' : '' ?>><?= e($enrollment['estudiante'] . ' - ' . $enrollment['nombre_materia'] . ' | ' . $enrollment['nombre_periodo'] . ' | ' . $enrollment['dia_semana'] . ' ' . substr($enrollment['hora_inicio'], 0, 5) . ' - ' . substr($enrollment['hora_fin'], 0, 5)) ?></option>
+                        <?php $legacySelectionUsed = false; foreach ($enrollments as $enrollment): $choice = (int) $enrollment['id_inscripcion'] . ':' . (int) $enrollment['id_oferta_horario']; $selected = $choice === $data['id_inscripcion_horario']; if (!$selected && $data['id_inscripcion_horario'] === '' && !$legacySelectionUsed && (int) $data['id_inscripcion'] > 0 && (int) $data['id_inscripcion'] === (int) $enrollment['id_inscripcion']): $selected = true; $legacySelectionUsed = true; endif; ?>
+                            <option value="<?= e($choice) ?>" <?= $selected ? 'selected' : '' ?>><?= e($enrollment['estudiante'] . ' · ' . $enrollment['nombre_materia'] . ' · ' . $enrollment['nombre_periodo'] . ' · ' . $enrollment['dia_semana'] . ' ' . substr($enrollment['hora_inicio'], 0, 5) . '–' . substr($enrollment['hora_fin'], 0, 5) . ($enrollment['nombre_aula'] ? ' · ' . $enrollment['nombre_aula'] : '')) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <small>El estudiante, materia, turno y aula se toman de la inscripcion seleccionada.</small>
+                    <small>El estudiante se inscribe en la materia; tú eliges uno de sus horarios publicados para programar cada sesión.</small>
                 </div>
                 <div>
                     <label for="fecha">Fecha de la sesion</label>

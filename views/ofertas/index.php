@@ -23,6 +23,7 @@ $formatDays = static function (array $days) use ($dayOrder, $dayLabels): string 
     return ($segments ? implode(', ', $segments) . ' y ' : '') . $last;
 };
 $types = array_values(array_unique(array_column($ofertas, 'nombre_tipo_tutoria')));
+$statusLabel = static fn (string $status): string => ucfirst($status);
 $periods = [];
 $statuses = [];
 $turnos = [];
@@ -43,6 +44,68 @@ ksort($statuses);
 
     <?php if ($message): ?><p class="success" role="status"><?= e($message) ?></p><?php endif; ?><?php if ($error): ?><p class="alert" role="alert"><?= e($error) ?></p><?php endif; ?>
 
+    <?php if ($bajasTutor): ?>
+        <section class="card tutor-withdrawal-review" aria-labelledby="tutor-withdrawals-title">
+            <div class="section-heading">
+                <div><h2 id="tutor-withdrawals-title">Solicitudes de baja de tutores</h2><p>Cuando hay estudiantes o sesiones activas, confirma primero un tutor de reemplazo para transferirlos.</p></div>
+                <span class="table-meta"><?= count($bajasTutor) ?> pendiente<?= count($bajasTutor) === 1 ? '' : 's' ?></span>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead><tr><th>Tutor</th><th>Materia / periodo</th><th>Motivo</th><th>Impacto</th><th>Decisión</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($bajasTutor as $withdrawal):
+                            $needsReplacement = (int) $withdrawal['inscritos_activos'] > 0 || (int) $withdrawal['sesiones_activas'] > 0;
+                            $hasReplacement = !empty($withdrawal['tutor_reemplazo']);
+                        ?>
+                            <tr>
+                                <td><?= e($withdrawal['tutor']) ?><span class="table-profile-description"><?= e($withdrawal['turno']) ?></span></td>
+                                <td><?= e($withdrawal['nombre_materia']) ?><span class="table-profile-description"><?= e($withdrawal['nombre_periodo']) ?> · <?= e($formatDate($withdrawal['fecha_inicio'])) ?>–<?= e($formatDate($withdrawal['fecha_fin'])) ?></span></td>
+                                <td><?= e($withdrawal['motivo']) ?><span class="table-profile-description">Solicitada <?= e($withdrawal['fecha_solicitud']) ?></span></td>
+                                <td>
+                                    <?= (int) $withdrawal['inscritos_activos'] ?> inscripción<?= (int) $withdrawal['inscritos_activos'] === 1 ? '' : 'es' ?> ·
+                                    <?= (int) $withdrawal['sesiones_activas'] ?> sesión<?= (int) $withdrawal['sesiones_activas'] === 1 ? '' : 'es' ?> activa<?= (int) $withdrawal['sesiones_activas'] === 1 ? '' : 's' ?>
+                                    <?php if ($hasReplacement): ?><span class="table-profile-description">Reemplazo: <?= e($withdrawal['tutor_reemplazo']) ?></span><?php elseif ($needsReplacement): ?><span class="table-profile-description">Falta confirmar reemplazo.</span><?php else: ?><span class="table-profile-description">Puede aprobarse sin transferencia.</span><?php endif; ?>
+                                </td>
+                                <td>
+                                    <form class="tutor-withdrawal-review-form" method="post" action="<?= e(app_url('ofertas/revisar-baja-tutor.php')) ?>">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="id_baja" value="<?= (int) $withdrawal['id_baja'] ?>">
+                                        <input class="form-control form-control-sm" name="respuesta_admin" maxlength="500" placeholder="Respuesta opcional">
+                                        <button class="btn btn-sm btn-primary" name="decision" value="aprobada" type="submit" <?= $needsReplacement && !$hasReplacement ? 'disabled title="Confirme un tutor de reemplazo antes de aprobar"' : '' ?> onclick="return confirm('¿Aprobar la baja y transferir las inscripciones activas al reemplazo confirmado?');">Aprobar baja</button>
+                                        <button class="btn btn-sm btn-outline-danger" name="decision" value="rechazada" type="submit" onclick="return confirm('¿Rechazar la solicitud y mantener al tutor asignado?');">Rechazar</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    <?php endif; ?>
+
+    <?php if ($historialBajasTutor): ?>
+        <details class="card tutor-withdrawal-history">
+            <summary>Historial de bajas recientes (<?= count($historialBajasTutor) ?>)</summary>
+            <div class="table-wrapper">
+                <table>
+                    <thead><tr><th>Fecha</th><th>Tutor</th><th>Materia</th><th>Resultado</th><th>Motivo / respuesta</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($historialBajasTutor as $withdrawal): ?>
+                            <tr>
+                                <td><?= e($withdrawal['fecha_resolucion'] ?: $withdrawal['fecha_solicitud']) ?></td>
+                                <td><?= e($withdrawal['tutor']) ?></td>
+                                <td><?= e($withdrawal['nombre_materia']) ?><span class="table-profile-description"><?= e($withdrawal['nombre_periodo'] . ' · ' . $withdrawal['turno']) ?></span></td>
+                                <td><span class="status status-<?= e($withdrawal['estado']) ?>"><?= $withdrawal['estado'] === 'aprobada' ? 'Baja aprobada' : 'Baja rechazada' ?></span><?php if ($withdrawal['tutor_reemplazo']): ?><span class="table-profile-description">Reemplazo: <?= e($withdrawal['tutor_reemplazo']) ?></span><?php elseif (!$withdrawal['revisor'] && $withdrawal['estado'] === 'aprobada'): ?><span class="table-profile-description">Sin inscritos; cancelación inmediata</span><?php endif; ?></td>
+                                <td><?= e($withdrawal['motivo']) ?><?php if ($withdrawal['respuesta_admin']): ?><span class="table-profile-description"><?= e($withdrawal['respuesta_admin']) ?></span><?php endif; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    <?php endif; ?>
+
     <section class="offer-catalog" aria-labelledby="admin-offers-title">
         <div class="section-heading offer-section-heading"><div><h2 id="admin-offers-title">Catalogo de ofertas</h2><p>Filtra la planificacion por turno, periodo, estado o tipo.</p></div><span class="table-meta" data-offer-count><?= count($ofertas) ?> resultado<?= count($ofertas) === 1 ? '' : 's' ?></span></div>
 
@@ -50,7 +113,7 @@ ksort($statuses);
             <div class="offer-filter-turnos"><span>Turno</span><div class="offer-filter-buttons" role="group" aria-label="Filtrar por turno"><button class="offer-filter-button is-active" type="button" value="" data-offer-filter="turno" data-filter-value="" aria-pressed="true">Todos</button><?php foreach ($turnos as $turnId => $turno): ?><button class="offer-filter-button" type="button" value="<?= (int) $turnId ?>" data-offer-filter="turno" data-filter-value="<?= (int) $turnId ?>" aria-pressed="false"><?= e($turno) ?></button><?php endforeach; ?></div></div>
             <div class="offer-search"><i class="bi bi-search" aria-hidden="true"></i><label class="sr-only" for="admin-offer-search">Buscar oferta</label><input class="form-control form-control-sm" id="admin-offer-search" type="search" placeholder="Buscar materia, carrera o paralelo..." data-offer-search></div>
             <label><span>Periodo</span><select class="form-select form-select-sm" data-offer-filter="period"><option value="">Todos</option><?php foreach ($periods as $period): ?><option value="<?= e(strtolower($period)) ?>"><?= e($period) ?></option><?php endforeach; ?></select></label>
-            <label><span>Estado</span><select class="form-select form-select-sm" data-offer-filter="status"><option value="">Todos</option><?php foreach ($statuses as $status): ?><option value="<?= e(strtolower($status)) ?>"><?= e(ucfirst($status)) ?></option><?php endforeach; ?></select></label>
+            <label><span>Estado</span><select class="form-select form-select-sm" data-offer-filter="status"><option value="">Todos</option><?php foreach ($statuses as $status): ?><option value="<?= e(strtolower($status)) ?>"><?= e($statusLabel($status)) ?></option><?php endforeach; ?></select></label>
             <label><span>Tipo</span><select class="form-select form-select-sm" data-offer-filter="type"><option value="">Todos</option><?php foreach ($types as $type): ?><option value="<?= e(strtolower($type)) ?>"><?= e(ucfirst($type)) ?></option><?php endforeach; ?></select></label>
             <button class="offer-filter-reset" type="button" data-offer-reset><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Limpiar</button>
         </div>
@@ -76,7 +139,7 @@ ksort($statuses);
             ?>
                 <article class="offer-card admin-offer-card" data-offer-card data-search="<?= e($searchText) ?>" data-type="<?= e(strtolower($offer['nombre_tipo_tutoria'])) ?>" data-period="<?= e(strtolower($offer['nombre_periodo'])) ?>" data-status="<?= e(strtolower($offer['estado'])) ?>" data-turno="<?= (int) $offer['id_turno'] ?>">
                     <div class="offer-card-accent"></div>
-                    <div class="admin-offer-card-header"><div class="offer-card-badges"><span class="offer-badge offer-badge-type"><?= e($offer['nombre_tipo_tutoria']) ?></span><span class="offer-badge offer-badge-turno"><?= e(ucfirst($offer['turno'])) ?></span><span class="offer-badge offer-badge-frequency"><?= e(ucfirst($offer['frecuencia_programacion'])) ?></span></div><div class="admin-offer-statuses"><span class="status status-<?= e($offer['estado']) ?>"><?= e($offer['estado']) ?></span><?php if ($isFull): ?><span class="status status-llena">Llena</span><?php endif; ?></div></div>
+                    <div class="admin-offer-card-header"><div class="offer-card-badges"><span class="offer-badge offer-badge-type"><?= e($offer['nombre_tipo_tutoria']) ?></span><span class="offer-badge offer-badge-turno"><?= e(ucfirst($offer['turno'])) ?></span><span class="offer-badge offer-badge-frequency"><?= e(ucfirst($offer['frecuencia_programacion'])) ?></span></div><div class="admin-offer-statuses"><span class="status status-<?= e($offer['estado']) ?>"><?= e($statusLabel($offer['estado'])) ?></span><?php if ((int) $offer['tutores_confirmados'] > 0): ?><span class="status status-activo"><?= (int) $offer['tutores_confirmados'] ?> tutor<?= (int) $offer['tutores_confirmados'] === 1 ? '' : 'es' ?> confirmado<?= (int) $offer['tutores_confirmados'] === 1 ? '' : 's' ?></span><?php else: ?><span class="status status-pendiente">Tutor por asignar</span><?php endif; ?><?php if ($isFull): ?><span class="status status-llena">Llena</span><?php endif; ?></div></div>
                     <div class="offer-card-title"><div class="offer-card-icon"><i class="bi bi-journal-bookmark-fill" aria-hidden="true"></i></div><div><h3><?= e($offer['nombre_materia']) ?></h3><p><?= e($offer['nombre_carrera'] ?: 'Formacion general') ?> · Grupo <?= e($offer['nombre_grupo']) ?></p></div></div>
                     <div class="admin-offer-period"><i class="bi bi-calendar3" aria-hidden="true"></i><span><strong><?= e($offer['nombre_periodo']) ?></strong><small><?= e($formatDate($offer['fecha_inicio'])) ?> - <?= e($formatDate($offer['fecha_fin'])) ?></small></span></div>
                     <div class="offer-facts">

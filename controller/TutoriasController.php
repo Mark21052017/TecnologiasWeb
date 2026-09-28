@@ -28,20 +28,29 @@ final class TutoriasController
 
     public function schedule(array $input, int $userId): array
     {
+        $scheduleChoice = trim((string) ($input['id_inscripcion_horario'] ?? ''));
+        $enrollmentId = 0;
+        $offerScheduleId = 0;
+        if (preg_match('/^(\d+):(\d+)$/', $scheduleChoice, $choice) === 1) {
+            $enrollmentId = (int) $choice[1];
+            $offerScheduleId = (int) $choice[2];
+        }
         $data = [
-            'id_inscripcion' => filter_var($input['id_inscripcion'] ?? null, FILTER_VALIDATE_INT) ?: 0,
+            'id_inscripcion' => $enrollmentId,
+            'id_oferta_horario' => $offerScheduleId,
+            'id_inscripcion_horario' => $scheduleChoice,
             'fecha' => trim((string) ($input['fecha'] ?? '')),
             'modalidad' => trim((string) ($input['modalidad'] ?? 'presencial')),
             'lugar_o_enlace' => trim((string) ($input['lugar_o_enlace'] ?? '')),
             'observaciones' => trim((string) ($input['observaciones'] ?? '')),
         ];
         $errors = [];
-        $enrollment = $data['id_inscripcion'] > 0
-            ? $this->model->enrollmentForTutor($data['id_inscripcion'], $userId)
+        $enrollment = $data['id_inscripcion'] > 0 && $data['id_oferta_horario'] > 0
+            ? $this->model->enrollmentForTutor($data['id_inscripcion'], $data['id_oferta_horario'], $userId)
             : null;
 
         if (!$enrollment) {
-            $errors[] = 'Seleccione una inscripcion activa de sus estudiantes.';
+            $errors[] = 'Seleccione una inscripción activa y uno de sus horarios publicados.';
         }
 
         $date = DateTime::createFromFormat('!Y-m-d', $data['fecha']);
@@ -83,7 +92,7 @@ final class TutoriasController
         }
 
         try {
-            $this->model->createFromEnrollment($data['id_inscripcion'], $userId, $data);
+            $this->model->createFromEnrollment($data['id_inscripcion'], $data['id_oferta_horario'], $userId, $data);
             return [$data, []];
         } catch (RuntimeException $exception) {
             return [$data, [$exception->getMessage()]];

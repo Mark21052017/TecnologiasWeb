@@ -8,6 +8,7 @@ $activePage = 'materias-disponibles';
 $user = Auth::user();
 $studentId = (new Tutoria())->studentIdByUserId((int) $user['id_usuario']);
 $subjects = (new OfertasController())->publicOffers($studentId);
+$postulationsByOffer = $studentId ? (new PostulacionesTutoriaController())->latestStatusByOffer($studentId) : [];
 $message = (string) ($_GET['message'] ?? '') === 'created' ? 'Inscripcion registrada correctamente.' : null;
 $error = (string) ($_GET['error'] ?? '');
 

@@ -23,10 +23,11 @@
 
     <div class="table-wrapper card">
         <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Estudiante</th><th>Correo</th><th>Carrera</th><th>Semestre</th><th>Registro</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>N.º</th><th>Estudiante</th><th>Correo</th><th>Carrera</th><th>Semestre</th><th>Registro</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>
-                <?php foreach ($students as $student): ?>
+                <?php foreach ($students as $rowNumber => $student): ?>
                     <tr data-row>
+                        <td><?= $rowNumber + 1 ?></td>
                         <td><?= e($student['nombre'] . ' ' . $student['apellido']) ?></td>
                         <td><?= e($student['correo']) ?></td>
                         <td><?= e($student['nombre_carrera']) ?></td>
@@ -34,7 +35,7 @@
                         <td><?= e($student['registro_universitario'] ?: 'Sin registro') ?></td>
                         <td><span class="status status-<?= e($student['estado']) ?>"><?= e($student['estado']) ?></span></td>
                         <td class="actions">
-                            <a class="icon-action" href="<?= e(app_url('estudiantes/edit.php?id=' . (int) $student['id_estudiante'])) ?>" title="Editar estudiante" aria-label="Editar estudiante"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar estudiante</span></a>
+                            <a class="icon-action" href="<?= e(app_url('usuarios/edit.php?id=' . (int) $student['id_usuario'] . '&return_to=estudiantes')) ?>" title="Editar cuenta y perfil de estudiante" aria-label="Editar cuenta y perfil de estudiante"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar cuenta y perfil de estudiante</span></a>
                             <form method="post" action="<?= e(app_url('estudiantes/delete.php')) ?>" onsubmit="return confirm('Eliminar este perfil?');">
                                 <input type="hidden" name="id" value="<?= (int) $student['id_estudiante'] ?>">
                                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
@@ -43,8 +44,8 @@
                         </td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$students): ?><tr><td colspan="7">No hay estudiantes registrados. Cree primero un usuario con rol estudiante.</td></tr><?php endif; ?>
-                <tr data-search-empty hidden><td colspan="7" class="empty-state">No se encontraron estudiantes.</td></tr>
+                <?php if (!$students): ?><tr><td colspan="8">No hay estudiantes registrados. Cree primero un usuario con rol estudiante.</td></tr><?php endif; ?>
+                <tr data-search-empty hidden><td colspan="8" class="empty-state">No se encontraron estudiantes.</td></tr>
             </tbody>
         </table>
     </div>

@@ -4,9 +4,9 @@ services:
     container_name: tecnologiasweb-db
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${DB_NAME:-testdb}
-      MYSQL_USER: ${DB_USER:-biblioteca_user}
-      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:?Define MYSQL_APP_PASSWORD en .env.docker}
+      MYSQL_DATABASE: ${DB_DATABASE:-${DB_NAME:-testdb}}
+      MYSQL_USER: ${DB_USERNAME:-${DB_USER:-biblioteca_user}}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-${MYSQL_APP_PASSWORD:?Define DB_PASSWORD o MYSQL_APP_PASSWORD en .env.docker}}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Define MYSQL_ROOT_PASSWORD en .env.docker}
     volumes:
       - mysql_data:/var/lib/mysql
@@ -26,15 +26,16 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
       APP_URL: ${APP_URL:-}
-      DB_HOST: db
-      DB_PORT: 3306
-      DB_NAME: ${DB_NAME:-testdb}
-      DB_USER: ${DB_USER:-biblioteca_user}
-      DB_PASSWORD: ${MYSQL_APP_PASSWORD:?Define MYSQL_APP_PASSWORD en .env.docker}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:-${DB_NAME:-testdb}}
+      DB_USERNAME: ${DB_USERNAME:-${DB_USER:-biblioteca_user}}
+      DB_PASSWORD: ${DB_PASSWORD:-${MYSQL_APP_PASSWORD:?Define DB_PASSWORD o MYSQL_APP_PASSWORD en .env.docker}}
     ports:
       - "8080:80"
     volumes:
       - .:/var/www/html
+      - ./docker/apache/tecnologiasweb.conf:/etc/apache2/conf-available/tecnologiasweb.conf:ro
     depends_on:
       db:
         condition: service_healthy

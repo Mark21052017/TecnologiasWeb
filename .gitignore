@@ -4,11 +4,16 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.docker.example
 .DS_Store
 storage/logs/*
 !storage/logs/.gitkeep
 storage/profile-images/*
 !storage/profile-images/.gitkeep
+storage/mg-academic-imports/*
+!storage/mg-academic-imports/.gitkeep
+storage/mg-reports/*
+!storage/mg-reports/.gitkeep
 
 # Local Docker credentials and database backups.
 .env.docker

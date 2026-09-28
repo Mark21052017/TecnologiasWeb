@@ -20,13 +20,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $errors[] = $error;
     } else {
         $cohortId = filter_var($_POST['id_cohorte'] ?? null, FILTER_VALIDATE_INT);
+        $modalityId = filter_var($_POST['id_modalidad'] ?? null, FILTER_VALIDATE_INT);
         flash_set('mg_message', $action === 'estado' ? 'Estado del hito actualizado.' : 'Hito guardado correctamente.');
-        header('Location: ' . app_url('modalidades-grado/calendario.php?id_cohorte=' . max(0, (int) $cohortId)), true, 303);
+        header('Location: ' . app_url('modalidades-grado/calendario.php?id_cohorte=' . max(0, (int) $cohortId) . '&id_modalidad=' . max(0, (int) $modalityId)), true, 303);
         exit;
     }
 }
 
 $cohorts = $controller->cohorts();
+$modalities = $controller->modalities();
 $cohortId = filter_var($_GET['id_cohorte'] ?? null, FILTER_VALIDATE_INT);
 $selectedCohortId = $cohortId !== false && $cohortId !== null ? (int) $cohortId : 0;
 if (!$selectedCohortId && $cohorts) {
@@ -38,15 +40,49 @@ if (!$selectedCohortId && $cohorts) {
     }
 }
 $selectedCohort = $selectedCohortId ? $controller->cohort($selectedCohortId) : null;
+$rawModality = $_GET['id_modalidad'] ?? null;
+$legacyCalendar = $rawModality === 'legacy';
+$selectedModalityId = 0;
+if (!$legacyCalendar) {
+    $modalityFilter = filter_var($rawModality, FILTER_VALIDATE_INT);
+    if ($modalityFilter !== false && $modalityFilter !== null && $modalityFilter > 0) {
+        $selectedModalityId = (int) $modalityFilter;
+    } else {
+        foreach ($modalities as $option) {
+            if ($option['estado'] === 'activa') {
+                $selectedModalityId = (int) $option['id_modalidad'];
+                break;
+            }
+        }
+    }
+}
 $editingId = filter_var($_GET['id_hito'] ?? null, FILTER_VALIDATE_INT);
 $milestone = $editingId !== false && $editingId !== null ? $controller->milestone((int) $editingId) : null;
 if ($milestone) {
     $selectedCohortId = (int) $milestone['id_cohorte'];
     $selectedCohort = $controller->cohort($selectedCohortId);
+    if ($milestone['id_modalidad'] === null) {
+        $legacyCalendar = true;
+        $selectedModalityId = 0;
+    } else {
+        $selectedModalityId = (int) $milestone['id_modalidad'];
+        $legacyCalendar = false;
+    }
 }
-$readOnly = $role === 'auxiliar_mg';
-$milestones = $selectedCohort ? $controller->calendar($selectedCohortId, $readOnly) : [];
+$selectedModality = null;
+foreach ($modalities as $option) {
+    if ((int) $option['id_modalidad'] === $selectedModalityId) {
+        $selectedModality = $option;
+        break;
+    }
+}
+$readOnly = $role === 'auxiliar_mg' || $legacyCalendar || !$selectedModality || $selectedModality['estado'] !== 'activa';
+$milestones = $selectedCohort ? $controller->calendarScope($selectedCohortId, $legacyCalendar ? null : $selectedModalityId, $role === 'auxiliar_mg') : [];
 $reportCount = count(array_filter($milestones, static fn (array $row): bool => $row['tipo'] === 'informe' && $row['estado'] === 'activo'));
+$milestoneTypes = $controller->milestoneTypes();
+$templates = $controller->templates($selectedModalityId > 0 ? $selectedModalityId : null);
+$canManage = in_array($role, ['administrador', 'coordinador_mg'], true) && !$readOnly
+    && $selectedCohort && (int) $selectedCohort['activa'] === 1 && $selectedModality && $selectedModality['estado'] === 'activa';
 $title = 'Calendario MG';
-$activePage = 'modalidades-grado';
+$activePage = 'mg-cohortes';
 require dirname(__DIR__, 2) . '/views/mg/calendario.php';

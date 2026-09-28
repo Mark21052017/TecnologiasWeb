@@ -8,8 +8,11 @@ $title = 'Programar sesion';
 $activePage = 'tutorias';
 $userId = (int) Auth::user()['id_usuario'];
 $controller = new TutoriasController();
+$requestedEnrollmentId = filter_var($_GET['id_inscripcion'] ?? null, FILTER_VALIDATE_INT);
 $data = [
-    'id_inscripcion' => filter_var($_GET['id_inscripcion'] ?? null, FILTER_VALIDATE_INT) ?: '',
+    'id_inscripcion' => $requestedEnrollmentId !== false ? (int) $requestedEnrollmentId : 0,
+    'id_oferta_horario' => 0,
+    'id_inscripcion_horario' => '',
     'fecha' => '',
     'modalidad' => 'presencial',
     'lugar_o_enlace' => '',

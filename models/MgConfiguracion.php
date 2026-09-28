@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class MgConfiguracion
 {
-    private const STAGES = ['previa', 'mg1', 'mg2', 'finalizado'];
+    private const STAGES = ['previa', 'mg1', 'mg2', 'defensa', 'cierre', 'finalizado'];
     private const EVIDENCE_STATES = ['confirmado', 'pendiente', 'propuesta'];
 
     public function summary(): array
@@ -57,33 +57,75 @@ final class MgConfiguracion
     public function modalities(): array
     {
         return Database::connection()->query(
-            'SELECT id_modalidad, codigo, nombre, requiere_tutor, estado
+            'SELECT id_modalidad, codigo, nombre, descripcion, requiere_tutor,
+                    permite_trabajo_grupal, max_integrantes, requiere_tema_preliminar, requiere_descripcion,
+                    requiere_informes, requiere_asistencia, asistencia_minima_pct,
+                    requiere_mdg1, requiere_mdg2, requiere_informe_final, requiere_tribunal, requiere_defensa,
+                    max_defensas, avance_requerido_defensa, impide_tutor_tribunal, miembros_minimos_tribunal, estado
              FROM mg_modalidades ORDER BY nombre'
         )->fetchAll();
     }
 
-    public function saveModality(?int $id, string $code, string $name, bool $requiresTutor): void
+    public function saveModality(?int $id, string $code, string $name, bool $requiresTutor, array $rules = []): void
     {
         if ($id === null) {
             $statement = Database::connection()->prepare(
-                'INSERT INTO mg_modalidades (codigo, nombre, requiere_tutor) VALUES (:codigo, :nombre, :requiere_tutor)'
+                'INSERT INTO mg_modalidades
+                    (codigo, nombre, descripcion, requiere_tutor, permite_trabajo_grupal, max_integrantes,
+                     requiere_tema_preliminar, requiere_descripcion, requiere_informes, requiere_asistencia, asistencia_minima_pct,
+                     requiere_mdg1, requiere_mdg2, requiere_informe_final, requiere_tribunal, requiere_defensa,
+                     max_defensas, avance_requerido_defensa, impide_tutor_tribunal, miembros_minimos_tribunal)
+                 VALUES (:codigo, :nombre, :descripcion, :requiere_tutor, :grupal, :max_integrantes,
+                     :requiere_tema, :requiere_descripcion, :requiere_informes, :requiere_asistencia, :asistencia_minima_pct,
+                     :requiere_mdg1, :requiere_mdg2, :requiere_informe_final, :requiere_tribunal, :requiere_defensa,
+                     :max_defensas, :avance_requerido_defensa, :impide_tutor_tribunal, :miembros_minimos_tribunal)'
             );
-            $statement->execute(['codigo' => $code, 'nombre' => $name, 'requiere_tutor' => $requiresTutor ? 1 : 0]);
+            $statement->execute($this->modalityParameters($code, $name, $requiresTutor, $rules));
             return;
         }
 
         $statement = Database::connection()->prepare(
-            'UPDATE mg_modalidades SET codigo = :codigo, nombre = :nombre, requiere_tutor = :requiere_tutor WHERE id_modalidad = :id'
+            'UPDATE mg_modalidades SET codigo = :codigo, nombre = :nombre, descripcion = :descripcion,
+                 requiere_tutor = :requiere_tutor, permite_trabajo_grupal = :grupal, max_integrantes = :max_integrantes,
+                 requiere_tema_preliminar = :requiere_tema, requiere_descripcion = :requiere_descripcion,
+                 requiere_informes = :requiere_informes, requiere_asistencia = :requiere_asistencia,
+                 asistencia_minima_pct = :asistencia_minima_pct, requiere_mdg1 = :requiere_mdg1,
+                 requiere_mdg2 = :requiere_mdg2, requiere_informe_final = :requiere_informe_final,
+                 requiere_tribunal = :requiere_tribunal, requiere_defensa = :requiere_defensa,
+                 max_defensas = :max_defensas, avance_requerido_defensa = :avance_requerido_defensa,
+                 impide_tutor_tribunal = :impide_tutor_tribunal, miembros_minimos_tribunal = :miembros_minimos_tribunal
+             WHERE id_modalidad = :id'
         );
-        $statement->execute([
-            'id' => $id,
-            'codigo' => $code,
-            'nombre' => $name,
-            'requiere_tutor' => $requiresTutor ? 1 : 0,
-        ]);
+        $statement->execute($this->modalityParameters($code, $name, $requiresTutor, $rules) + ['id' => $id]);
         if ($statement->rowCount() === 0 && !$this->modalityExists($id)) {
             throw new RuntimeException('La modalidad seleccionada no existe.');
         }
+    }
+
+    private function modalityParameters(string $code, string $name, bool $requiresTutor, array $rules): array
+    {
+        return [
+            'codigo' => $code,
+            'nombre' => $name,
+            'descripcion' => $rules['descripcion'] ?? null,
+            'requiere_tutor' => $requiresTutor ? 1 : 0,
+            'grupal' => !empty($rules['permite_trabajo_grupal']) ? 1 : 0,
+            'max_integrantes' => $rules['max_integrantes'] ?? null,
+            'requiere_tema' => !empty($rules['requiere_tema_preliminar']) ? 1 : 0,
+            'requiere_descripcion' => !empty($rules['requiere_descripcion']) ? 1 : 0,
+            'requiere_informes' => !empty($rules['requiere_informes']) ? 1 : 0,
+            'requiere_asistencia' => !empty($rules['requiere_asistencia']) ? 1 : 0,
+            'asistencia_minima_pct' => $rules['asistencia_minima_pct'] ?? null,
+            'requiere_mdg1' => !empty($rules['requiere_mdg1']) ? 1 : 0,
+            'requiere_mdg2' => !empty($rules['requiere_mdg2']) ? 1 : 0,
+            'requiere_informe_final' => !empty($rules['requiere_informe_final']) ? 1 : 0,
+            'requiere_tribunal' => !empty($rules['requiere_tribunal']) ? 1 : 0,
+            'requiere_defensa' => !empty($rules['requiere_defensa']) ? 1 : 0,
+            'max_defensas' => $rules['max_defensas'] ?? null,
+            'avance_requerido_defensa' => $rules['avance_requerido_defensa'] ?? null,
+            'impide_tutor_tribunal' => array_key_exists('impide_tutor_tribunal', $rules) ? (!empty($rules['impide_tutor_tribunal']) ? 1 : 0) : 1,
+            'miembros_minimos_tribunal' => $rules['miembros_minimos_tribunal'] ?? null,
+        ];
     }
 
     public function setModalityActive(int $id, bool $active): bool
@@ -180,10 +222,52 @@ final class MgConfiguracion
         return $statement->fetchAll();
     }
 
+    public function calendarScope(int $cohortId, ?int $modalityId, bool $activeOnly = false): array
+    {
+        $whereModality = $modalityId === null ? 'h.id_modalidad IS NULL' : 'h.id_modalidad = :id_modalidad';
+        $whereStatus = $activeOnly ? " AND h.estado = 'activo'" : '';
+        $statement = Database::connection()->prepare(
+            "SELECT h.id_hito, h.id_cohorte, h.id_modalidad, h.etapa, h.tipo, th.nombre AS tipo_nombre,
+                    h.nombre, h.orden, h.fecha_limite, h.avance_esperado_pct, h.estado,
+                    c.codigo AS codigo_cohorte, c.nombre AS nombre_cohorte, m.nombre AS modalidad,
+                    COUNT(DISTINCT sh.id_seguimiento) AS obligaciones
+             FROM mg_calendario h
+             INNER JOIN mg_cohortes c ON c.id_cohorte = h.id_cohorte
+             LEFT JOIN mg_modalidades m ON m.id_modalidad = h.id_modalidad
+             LEFT JOIN mg_tipos_hito th ON th.codigo = h.tipo
+             LEFT JOIN mg_seguimiento_hitos sh ON sh.id_hito = h.id_hito
+             WHERE h.id_cohorte = :id_cohorte AND $whereModality $whereStatus
+             GROUP BY h.id_hito, h.id_cohorte, h.id_modalidad, h.etapa, h.tipo, th.nombre,
+                      h.nombre, h.orden, h.fecha_limite, h.avance_esperado_pct, h.estado,
+                      c.codigo, c.nombre, m.nombre
+             ORDER BY h.orden, h.fecha_limite, h.nombre"
+        );
+        $params = ['id_cohorte' => $cohortId];
+        if ($modalityId !== null) {
+            $params['id_modalidad'] = $modalityId;
+        }
+        $statement->execute($params);
+        return $statement->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function milestoneTypes(): array
+    {
+        return Database::connection()->query(
+            "SELECT codigo, nombre FROM mg_tipos_hito WHERE estado = 'activo' ORDER BY orden, nombre"
+        )->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function milestoneTypeExists(string $code): bool
+    {
+        $statement = Database::connection()->prepare('SELECT 1 FROM mg_tipos_hito WHERE codigo = :codigo AND estado = "activo"');
+        $statement->execute(['codigo' => $code]);
+        return (bool) $statement->fetchColumn();
+    }
+
     public function milestone(int $id): ?array
     {
         $statement = Database::connection()->prepare(
-            'SELECT id_hito, id_cohorte, etapa, tipo, nombre, orden, fecha_limite, avance_esperado_pct, estado
+            'SELECT id_hito, id_cohorte, id_modalidad, etapa, tipo, nombre, orden, fecha_limite, avance_esperado_pct, estado
              FROM mg_calendario WHERE id_hito = :id LIMIT 1'
         );
         $statement->execute(['id' => $id]);
@@ -207,37 +291,240 @@ final class MgConfiguracion
         if ($this->cohort((int) $data['id_cohorte']) === null) {
             throw new InvalidArgumentException('Seleccione una cohorte válida.');
         }
+        $modality = Database::connection()->prepare('SELECT estado FROM mg_modalidades WHERE id_modalidad=:id');
+        $modality->execute(['id' => (int) ($data['id_modalidad'] ?? 0)]);
+        if ($modality->fetchColumn() !== 'activa') {
+            throw new InvalidArgumentException('Seleccione una modalidad activa para el calendario.');
+        }
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            if ($id === null) {
+                $statement = $pdo->prepare(
+                    'INSERT INTO mg_calendario
+                        (id_cohorte, id_modalidad, etapa, tipo, nombre, orden, fecha_limite, avance_esperado_pct, creado_por)
+                     VALUES
+                        (:id_cohorte, :id_modalidad, :etapa, :tipo, :nombre, :orden, :fecha_limite, :avance_esperado_pct, :creado_por)'
+                );
+                $statement->execute($data + ['creado_por' => $userId]);
+                $id = (int) $pdo->lastInsertId();
+            } else {
+                $scope = $pdo->prepare('SELECT id_cohorte,id_modalidad FROM mg_calendario WHERE id_hito=:id FOR UPDATE');
+                $scope->execute(['id' => $id]);
+                $current = $scope->fetch(PDO::FETCH_ASSOC);
+                if (!$current) {
+                    throw new RuntimeException('El hito seleccionado no existe.');
+                }
+                $obligations = $pdo->prepare('SELECT COUNT(*) FROM mg_seguimiento_hitos WHERE id_hito=:id');
+                $obligations->execute(['id' => $id]);
+                if ((int) $obligations->fetchColumn() > 0
+                    && ((int) $current['id_cohorte'] !== (int) $data['id_cohorte']
+                        || (int) ($current['id_modalidad'] ?? 0) !== (int) $data['id_modalidad'])) {
+                    throw new RuntimeException('No se puede mover un hito que ya generó obligaciones; desactívelo y cree otro en la nueva cohorte/modalidad.');
+                }
+                $statement = $pdo->prepare(
+                    'UPDATE mg_calendario
+                     SET id_cohorte = :id_cohorte, id_modalidad = :id_modalidad, etapa = :etapa, tipo = :tipo, nombre = :nombre,
+                         orden = :orden, fecha_limite = :fecha_limite, avance_esperado_pct = :avance_esperado_pct
+                     WHERE id_hito = :id'
+                );
+                $statement->execute($data + ['id' => $id]);
+                if ($statement->rowCount() === 0 && !$this->milestoneExists($id)) {
+                    throw new RuntimeException('El hito seleccionado no existe.');
+                }
+            }
+            $this->generateMilestoneObligations($pdo, $id);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+    }
 
-        if ($id === null) {
-            $statement = Database::connection()->prepare(
-                'INSERT INTO mg_calendario
-                    (id_cohorte, etapa, tipo, nombre, orden, fecha_limite, avance_esperado_pct, creado_por)
-                 VALUES
-                    (:id_cohorte, :etapa, :tipo, :nombre, :orden, :fecha_limite, :avance_esperado_pct, :creado_por)'
-            );
-            $statement->execute($data + ['creado_por' => $userId]);
+    private function generateMilestoneObligations(PDO $pdo, int $milestoneId): void
+    {
+        $milestone = $pdo->prepare('SELECT id_cohorte,id_modalidad,fecha_limite,estado FROM mg_calendario WHERE id_hito=:id FOR UPDATE');
+        $milestone->execute(['id' => $milestoneId]);
+        $row = $milestone->fetch(PDO::FETCH_ASSOC);
+        if (!$row || $row['estado'] !== 'activo' || $row['id_modalidad'] === null) {
             return;
         }
-
-        $statement = Database::connection()->prepare(
-            'UPDATE mg_calendario
-             SET id_cohorte = :id_cohorte, etapa = :etapa, tipo = :tipo, nombre = :nombre,
-                 orden = :orden, fecha_limite = :fecha_limite, avance_esperado_pct = :avance_esperado_pct
-             WHERE id_hito = :id'
+        $works = $pdo->prepare(
+            'SELECT id_trabajo FROM mg_trabajos
+             WHERE id_cohorte=:cohorte AND id_modalidad=:modalidad AND estado="activo"'
         );
-        $statement->execute($data + ['id' => $id]);
-        if ($statement->rowCount() === 0 && !$this->milestoneExists($id)) {
-            throw new RuntimeException('El hito seleccionado no existe.');
+        $works->execute(['cohorte' => (int) $row['id_cohorte'], 'modalidad' => (int) $row['id_modalidad']]);
+        $insert = $pdo->prepare(
+            'INSERT IGNORE INTO mg_seguimiento_hitos (id_hito,id_trabajo,fecha_limite)
+             VALUES (:hito,:trabajo,:limite)'
+        );
+        $update = $pdo->prepare(
+            'UPDATE mg_seguimiento_hitos SET fecha_limite=:limite
+             WHERE id_hito=:hito AND id_trabajo=:trabajo AND estado="pendiente"'
+        );
+        foreach ($works->fetchAll(PDO::FETCH_COLUMN) as $workId) {
+            $insert->execute(['hito' => $milestoneId, 'trabajo' => (int) $workId, 'limite' => $row['fecha_limite']]);
+            $update->execute(['limite' => $row['fecha_limite'], 'hito' => $milestoneId, 'trabajo' => (int) $workId]);
+        }
+    }
+
+    public function templates(?int $modalityId = null): array
+    {
+        $sql = 'SELECT t.id_plantilla,t.id_modalidad,t.nombre,t.descripcion,t.estado,t.creado_en,m.nombre AS modalidad,
+                       COUNT(ph.id_plantilla_hito) AS total_hitos
+                FROM mg_plantillas_calendario t
+                INNER JOIN mg_modalidades m ON m.id_modalidad=t.id_modalidad
+                LEFT JOIN mg_plantilla_hitos ph ON ph.id_plantilla=t.id_plantilla AND ph.estado="activo"';
+        $params = [];
+        if ($modalityId !== null) {
+            $sql .= ' WHERE t.id_modalidad=:modalidad';
+            $params['modalidad'] = $modalityId;
+        }
+        $sql .= ' GROUP BY t.id_plantilla,t.id_modalidad,t.nombre,t.descripcion,t.estado,t.creado_en,m.nombre ORDER BY m.nombre,t.nombre';
+        $statement = Database::connection()->prepare($sql);
+        $statement->execute($params);
+        return $statement->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function createTemplateFromCalendar(int $cohortId, int $modalityId, string $name, string $description, int $userId): void
+    {
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $cohort = $pdo->prepare('SELECT fecha_inicio,activa FROM mg_cohortes WHERE id_cohorte=:id FOR UPDATE');
+            $cohort->execute(['id' => $cohortId]);
+            $cohortRow = $cohort->fetch(PDO::FETCH_ASSOC);
+            if (!$cohortRow || (int) $cohortRow['activa'] !== 1) {
+                throw new RuntimeException('Seleccione una cohorte activa para crear la plantilla.');
+            }
+            $modality = $pdo->prepare('SELECT estado FROM mg_modalidades WHERE id_modalidad=:id');
+            $modality->execute(['id' => $modalityId]);
+            if ($modality->fetchColumn() !== 'activa') {
+                throw new RuntimeException('Seleccione una modalidad activa.');
+            }
+            $milestones = $pdo->prepare(
+                'SELECT etapa,tipo,nombre,orden,fecha_limite,avance_esperado_pct
+                 FROM mg_calendario WHERE id_cohorte=:cohorte AND id_modalidad=:modalidad AND estado="activo"
+                 ORDER BY orden,fecha_limite,nombre'
+            );
+            $milestones->execute(['cohorte' => $cohortId, 'modalidad' => $modalityId]);
+            $rows = $milestones->fetchAll(PDO::FETCH_ASSOC);
+            if (!$rows) {
+                throw new RuntimeException('No hay hitos activos para convertir en plantilla.');
+            }
+            $insert = $pdo->prepare('INSERT INTO mg_plantillas_calendario (id_modalidad,nombre,descripcion,creado_por) VALUES (:modalidad,:nombre,:descripcion,:usuario)');
+            $insert->execute([
+                'modalidad' => $modalityId, 'nombre' => $name, 'descripcion' => $description !== '' ? $description : null,
+                'usuario' => $userId,
+            ]);
+            $templateId = (int) $pdo->lastInsertId();
+            $save = $pdo->prepare(
+                'INSERT INTO mg_plantilla_hitos (id_plantilla,etapa,tipo,nombre,orden,dias_desde_inicio,avance_esperado_pct)
+                 VALUES (:plantilla,:etapa,:tipo,:nombre,:orden,:dias,:avance)'
+            );
+            foreach ($rows as $row) {
+                $days = $row['fecha_limite'] === null
+                    ? null
+                    : (int) (new DateTimeImmutable($cohortRow['fecha_inicio']))->diff(new DateTimeImmutable($row['fecha_limite']))->days;
+                $save->execute([
+                    'plantilla' => $templateId, 'etapa' => $row['etapa'], 'tipo' => $row['tipo'],
+                    'nombre' => $row['nombre'], 'orden' => $row['orden'], 'dias' => $days,
+                    'avance' => $row['avance_esperado_pct'],
+                ]);
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if ($exception instanceof PDOException && (string) $exception->getCode() === '23000') {
+                throw new RuntimeException('Ya existe una plantilla con ese nombre para esta modalidad.');
+            }
+            throw $exception;
+        }
+    }
+
+    public function applyTemplate(int $templateId, int $cohortId, int $userId): int
+    {
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $templateQuery = $pdo->prepare(
+                'SELECT t.id_modalidad,t.estado,c.fecha_inicio,c.fecha_fin,c.activa
+                 FROM mg_plantillas_calendario t CROSS JOIN mg_cohortes c
+                 WHERE t.id_plantilla=:plantilla AND c.id_cohorte=:cohorte FOR UPDATE'
+            );
+            $templateQuery->execute(['plantilla' => $templateId, 'cohorte' => $cohortId]);
+            $selection = $templateQuery->fetch(PDO::FETCH_ASSOC);
+            if (!$selection || $selection['estado'] !== 'activa' || (int) $selection['activa'] !== 1) {
+                throw new RuntimeException('Seleccione una plantilla y cohorte activas.');
+            }
+            $existing = $pdo->prepare('SELECT COUNT(*) FROM mg_calendario WHERE id_cohorte=:cohorte AND id_modalidad=:modalidad');
+            $existing->execute(['cohorte' => $cohortId, 'modalidad' => (int) $selection['id_modalidad']]);
+            if ((int) $existing->fetchColumn() > 0) {
+                throw new RuntimeException('Ya hay un calendario creado para esta cohorte y modalidad; no se aplicó la plantilla para evitar duplicados.');
+            }
+            $items = $pdo->prepare('SELECT * FROM mg_plantilla_hitos WHERE id_plantilla=:id AND estado="activo" ORDER BY orden,id_plantilla_hito');
+            $items->execute(['id' => $templateId]);
+            $rows = $items->fetchAll(PDO::FETCH_ASSOC);
+            if (!$rows) {
+                throw new RuntimeException('La plantilla no contiene hitos activos.');
+            }
+            foreach ($rows as $row) {
+                $dueDate = null;
+                if ($row['dias_desde_inicio'] !== null) {
+                    $dueDate = (new DateTimeImmutable($selection['fecha_inicio']))->modify('+' . (int) $row['dias_desde_inicio'] . ' days')->format('Y-m-d');
+                    if ($dueDate < $selection['fecha_inicio'] || $dueDate > $selection['fecha_fin']) {
+                        throw new RuntimeException('Una fecha derivada de la plantilla queda fuera del periodo de cohorte. Ajuste fechas o plantilla.');
+                    }
+                }
+                $insert = $pdo->prepare(
+                    'INSERT INTO mg_calendario
+                        (id_cohorte,id_modalidad,etapa,tipo,nombre,orden,fecha_limite,avance_esperado_pct,creado_por)
+                     VALUES (:cohorte,:modalidad,:etapa,:tipo,:nombre,:orden,:fecha,:avance,:usuario)'
+                );
+                $insert->execute([
+                    'cohorte' => $cohortId, 'modalidad' => (int) $selection['id_modalidad'], 'etapa' => $row['etapa'],
+                    'tipo' => $row['tipo'], 'nombre' => $row['nombre'], 'orden' => $row['orden'],
+                    'fecha' => $dueDate, 'avance' => $row['avance_esperado_pct'], 'usuario' => $userId,
+                ]);
+                $milestoneId = (int) $pdo->lastInsertId();
+                $this->generateMilestoneObligations($pdo, $milestoneId);
+            }
+            $pdo->commit();
+            return count($rows);
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
         }
     }
 
     public function setMilestoneActive(int $id, bool $active): bool
     {
-        $statement = Database::connection()->prepare(
-            'UPDATE mg_calendario SET estado = :estado WHERE id_hito = :id'
-        );
-        $statement->execute(['id' => $id, 'estado' => $active ? 'activo' : 'inactivo']);
-        return $statement->rowCount() > 0 || $this->milestoneExists($id);
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $statement = $pdo->prepare('UPDATE mg_calendario SET estado = :estado WHERE id_hito = :id');
+            $statement->execute(['id' => $id, 'estado' => $active ? 'activo' : 'inactivo']);
+            if ($statement->rowCount() === 0 && !$this->milestoneExists($id)) {
+                $pdo->rollBack();
+                return false;
+            }
+            if ($active) {
+                $this->generateMilestoneObligations($pdo, $id);
+            }
+            $pdo->commit();
+            return true;
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
     }
 
     private function modalityExists(int $id): bool

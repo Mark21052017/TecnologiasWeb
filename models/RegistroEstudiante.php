@@ -60,6 +60,14 @@ final class RegistroEstudiante
                 'semestre' => $data['semestre'],
                 'registro_universitario' => $registroUniversitario,
             ]);
+            (new Notificacion())->notifyAdministrators(
+                $pdo,
+                'cuenta_estudiante_pendiente',
+                'Nuevo registro de estudiante',
+                $data['nombre'] . ' ' . $data['apellido'] . ' envió sus datos de registro y espera aprobación.',
+                'usuarios/?rol=estudiante',
+                'student-registration:' . $userId
+            );
             $pdo->commit();
         } catch (Throwable $exception) {
             $pdo->rollBack();

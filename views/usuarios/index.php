@@ -4,7 +4,7 @@
     <div class="page-heading">
         <div>
             <h1>Cuentas de acceso</h1>
-            <p>Credenciales, roles y estado de acceso al sistema.</p>
+            <p>Gestiona cuentas, perfiles, fotos y contraseñas desde una sola lista.</p>
         </div>
         <a class="button btn btn-primary" href="<?= e(app_url('usuarios/create.php')) ?>">Nuevo usuario</a>
     </div>
@@ -21,8 +21,19 @@
         <div class="search-field">
             <span class="search-icon" aria-hidden="true">/</span>
             <label class="sr-only" for="user-search">Buscar cuentas</label>
-            <input class="form-control" id="user-search" type="search" placeholder="Buscar cuenta..." data-table-search>
+            <input class="form-control" id="user-search" type="search" placeholder="Buscar cuenta..." value="<?= e($searchQuery) ?>" data-table-search>
         </div>
+        <form class="account-role-filter" method="get" action="<?= e(app_url('usuarios/')) ?>" data-account-role-filter>
+            <input type="hidden" name="q" value="<?= e($searchQuery) ?>" data-account-role-search>
+            <label for="account-role-filter">Ver</label>
+            <select class="form-select form-select-sm" id="account-role-filter" name="rol">
+                <option value="" <?= $selectedRoleFilter === '' ? 'selected' : '' ?>>Todas las cuentas</option>
+                <option value="estudiante" <?= $selectedRoleFilter === 'estudiante' ? 'selected' : '' ?>>Estudiantes</option>
+                <option value="tutor" <?= $selectedRoleFilter === 'tutor' ? 'selected' : '' ?>>Tutores</option>
+                <option value="otros" <?= $selectedRoleFilter === 'otros' ? 'selected' : '' ?>>Otros roles</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Filtrar</button>
+        </form>
         <span class="table-meta" data-table-count><?= count($usuarios) ?> resultado<?= count($usuarios) === 1 ? '' : 's' ?></span>
     </div>
 
@@ -30,37 +41,41 @@
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
+                    <th data-row-number="true" data-sortable="false">N.º</th>
                     <th>Nombre</th>
                     <th>Usuario</th>
                     <th>Correo</th>
                     <th>Rol</th>
-                    <th>Perfil</th>
                     <th>Estado</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($usuarios as $usuario): ?>
+                <?php foreach ($usuarios as $rowNumber => $usuario):
+                    $hasRoleProfile = $usuario['nombre_rol'] === 'estudiante'
+                        ? !empty($usuario['id_estudiante'])
+                        : ($usuario['nombre_rol'] === 'tutor' ? !empty($usuario['id_tutor']) : null);
+                    $missingRoleProfile = in_array($usuario['nombre_rol'], ['estudiante', 'tutor'], true) && !$hasRoleProfile;
+                    $editLabel = $missingRoleProfile
+                        ? 'Completar perfil'
+                        : 'Editar cuenta y perfil';
+                    $editPath = 'usuarios/edit.php?id=' . (int) $usuario['id_usuario'] . '&return_to=usuarios';
+                    if ($returnRoleFilter !== '') {
+                        $editPath .= '&return_role=' . rawurlencode($returnRoleFilter);
+                    }
+                ?>
                     <tr data-row>
+                        <td><?= $rowNumber + 1 ?></td>
                         <td><?= e($usuario['nombre'] . ' ' . $usuario['apellido']) ?></td>
                         <td><?= e($usuario['usuario']) ?></td>
                         <td><?= e($usuario['correo']) ?></td>
                         <td><?= e($usuario['nombre_rol']) ?></td>
-                        <td>
-                            <?php if ($usuario['nombre_rol'] === 'estudiante'): ?>
-                                <?php if (!empty($usuario['id_estudiante'])): ?><a class="icon-action" href="<?= e(app_url('estudiantes/edit.php?id=' . (int) $usuario['id_estudiante'])) ?>" title="Ver perfil de estudiante" aria-label="Ver perfil de estudiante"><i class="bi bi-person-vcard" aria-hidden="true"></i><span class="visually-hidden">Ver perfil de estudiante</span></a><?php else: ?><a class="icon-action" href="<?= e(app_url('estudiantes/create.php?usuario=' . (int) $usuario['id_usuario'])) ?>" title="Crear perfil de estudiante" aria-label="Crear perfil de estudiante"><i class="bi bi-person-plus" aria-hidden="true"></i><span class="visually-hidden">Crear perfil de estudiante</span></a><?php endif; ?>
-                            <?php elseif ($usuario['nombre_rol'] === 'tutor'): ?>
-                                <?php if (!empty($usuario['id_tutor'])): ?><a class="icon-action" href="<?= e(app_url('tutores/edit.php?id=' . (int) $usuario['id_tutor'])) ?>" title="Ver perfil de tutor" aria-label="Ver perfil de tutor"><i class="bi bi-person-vcard" aria-hidden="true"></i><span class="visually-hidden">Ver perfil de tutor</span></a><?php else: ?><a class="icon-action" href="<?= e(app_url('tutores/create.php?usuario=' . (int) $usuario['id_usuario'])) ?>" title="Crear perfil de tutor" aria-label="Crear perfil de tutor"><i class="bi bi-person-plus" aria-hidden="true"></i><span class="visually-hidden">Crear perfil de tutor</span></a><?php endif; ?>
-                            <?php else: ?>
-                                <span class="table-muted">No aplica</span>
-                            <?php endif; ?>
-                        </td>
                         <td><span class="status status-<?= e($usuario['estado']) ?>"><?= e($usuario['estado']) ?></span></td>
                         <td class="actions">
                             <?php if ((int) $usuario['id_usuario'] === (int) ($protectedAdminId ?? 0)): ?>
                                 <span class="table-muted" title="Cuenta protegida"><i class="bi bi-shield-lock" aria-hidden="true"></i><span class="visually-hidden">Cuenta admin protegida</span></span>
                             <?php else: ?>
-                                <a class="icon-action" href="<?= e(app_url('usuarios/edit.php?id=' . (int) $usuario['id_usuario'])) ?>" title="Editar usuario" aria-label="Editar usuario"><i class="bi bi-pencil-square" aria-hidden="true"></i><span class="visually-hidden">Editar usuario</span></a>
+                                <a class="icon-action" href="<?= e(app_url($editPath)) ?>" title="<?= e($editLabel) ?>" aria-label="<?= e($editLabel) ?>"><i class="bi <?= $missingRoleProfile ? 'bi-person-plus' : 'bi-pencil-square' ?>" aria-hidden="true"></i><span class="visually-hidden"><?= e($editLabel) ?></span></a>
                                 <?php if ($usuario['estado'] === 'activo'): ?>
                                     <form method="post" action="<?= e(app_url('usuarios/delete.php')) ?>" onsubmit="return confirm('Desactivar este usuario?');">
                                         <input type="hidden" name="id" value="<?= (int) $usuario['id_usuario'] ?>">
@@ -80,7 +95,7 @@
                 <?php endforeach; ?>
                 <?php if (!$usuarios): ?>
                     <tr>
-                        <td colspan="7">No hay cuentas registradas.</td>
+                        <td colspan="7"><?= $selectedRoleFilter !== '' ? 'No hay cuentas para este filtro.' : 'No hay cuentas registradas.' ?></td>
                     </tr>
                 <?php endif; ?>
                 <tr data-search-empty hidden><td colspan="7" class="empty-state">No se encontraron cuentas.</td></tr>

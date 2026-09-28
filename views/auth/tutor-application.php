@@ -9,11 +9,11 @@ require __DIR__ . '/../layouts/header.php';
         <div>
             <span class="hero-kicker">Comunidad de tutores</span>
             <h1>Comparte lo que sabes.</h1>
-            <p>Postula como tutor y espera la aprobacion del administrador antes de iniciar sesiones.</p>
+            <p>Envía tus datos y espera a que un administrador active tu cuenta desde Cuentas de acceso.</p>
         </div>
         <ul class="auth-points">
             <li>Tu cuenta tendra rol tutor.</li>
-            <li>Las materias se asignan despues de la aprobacion.</li>
+            <li>Podrás iniciar sesión cuando tu cuenta sea aprobada.</li>
         </ul>
     </section>
 
@@ -21,7 +21,7 @@ require __DIR__ . '/../layouts/header.php';
         <div class="card shadow-sm border-0">
             <span class="eyebrow">Postulacion de tutor</span>
             <h2>Crear postulacion</h2>
-            <p>El administrador revisara tu especialidad y biografia.</p>
+            <p>Tu cuenta quedará pendiente hasta que el administrador la active en Cuentas de acceso.</p>
             <?php if (!empty($errors)): ?><div class="alert" role="alert"><ul><?php foreach ($errors as $formError): ?><li><?= e($formError) ?></li><?php endforeach; ?></ul></div><?php endif; ?>
             <form method="post" action="<?= e(app_url('postular-tutor.php')) ?>">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
