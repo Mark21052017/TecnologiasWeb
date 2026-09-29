@@ -46,8 +46,8 @@ $turnos = array_values(array_unique(array_column($subjects, 'turno')));
 ?>
 <main class="container">
     <div class="page-heading">
-        <div><h1>Materias disponibles</h1><p>Consulta las materias publicadas. Puedes registrarte durante el plazo aunque el tutor aún esté por asignar.</p></div>
-        <div class="mg-actions"><a class="button" href="<?= e(app_url('postulaciones-tutoria/')) ?>">Mis postulaciones a tutoría</a><a class="button" href="<?= e(app_url('tutorias/')) ?>">Mis tutorías</a></div>
+        <div><h1>Materias disponibles</h1><p>Regístrate en las materias publicadas durante el plazo de inscripción. El tutor puede asignarse después.</p></div>
+        <div class="mg-actions"><a class="button" href="<?= e(app_url('inscripciones/')) ?>">Mis materias registradas</a></div>
     </div>
     <?php if ($message): ?><p class="success" role="status"><?= e($message) ?></p><?php endif; ?>
     <?php if ($error): ?><p class="alert" role="alert"><?= e($error) ?></p><?php endif; ?>
@@ -70,7 +70,6 @@ $turnos = array_values(array_unique(array_column($subjects, 'turno')));
                 $tutorAssigned = (int) ($offer['tutores_confirmados'] ?? 0) > 0;
                 $scheduleGroups = $groupSchedules($offer['horarios_oferta'] ?? []);
                 $registrationOpen = (int) ($offer['inscripciones_abiertas'] ?? 0) === 1;
-                $postulation = $postulationsByOffer[(int) $offer['id_oferta']] ?? null;
                 $today = date('Y-m-d');
                 $registrationStatus = $offer['periodo_estado'] !== 'publicado'
                     ? 'Las inscripciones están cerradas por Administración.'
@@ -88,24 +87,22 @@ $turnos = array_values(array_unique(array_column($subjects, 'turno')));
                     <div class="admin-offer-period student-offer-period"><i class="bi bi-calendar3" aria-hidden="true"></i><span><strong><?= e($offer['nombre_periodo']) ?></strong><small><?= e($offer['fecha_inicio']) ?> - <?= e($offer['fecha_fin']) ?></small></span></div>
                     <div class="offer-facts student-offer-facts">
                         <div><i class="bi bi-people" aria-hidden="true"></i><span><small>Cupos</small><strong><?= (int) $offer['inscritos'] ?> de <?= (int) $offer['cupo'] ?></strong><em><?= $availableSeats ?> disponibles</em></span></div>
-                        <div><i class="bi bi-person-badge" aria-hidden="true"></i><span><small>Tutor</small><strong><?= $tutorAssigned ? 'Confirmado' : 'Por asignar' ?></strong></span></div>
+                        <div><i class="bi bi-person-badge" aria-hidden="true"></i><span><small><?= count($offer['tutores_asignados']) > 1 ? 'Tutores' : 'Tutor' ?></small><strong><?php if ($offer['tutores_asignados']): ?><?php foreach ($offer['tutores_asignados'] as $tutorIndex => $assignedTutor): ?><?php if ($tutorIndex > 0): ?>, <?php endif; ?><a class="offer-tutor-link" href="<?= e(app_url('perfil-tutor/?id_tutor=' . (int) $assignedTutor['id_tutor'])) ?>"><?= e($assignedTutor['nombre'] . ' ' . $assignedTutor['apellido']) ?></a><?php endforeach; ?><?php else: ?>Por asignar<?php endif; ?></strong></span></div>
                     </div>
                     <div class="offer-capacity" aria-label="Ocupación <?= $occupancy ?> por ciento"><span style="width: <?= $occupancy ?>%"></span></div>
                     <div class="offer-schedules student-offer-schedules"><small>Horario publicado</small><div><?php foreach ($scheduleGroups as $schedule): ?><span><strong><?= e($schedule['dias']) ?></strong><i class="bi bi-clock" aria-hidden="true"></i><?= e(substr($schedule['hora_inicio'], 0, 5) . '–' . substr($schedule['hora_fin'], 0, 5)) ?><?php if ($schedule['nombre_aula'] !== ''): ?><em><?= e($schedule['nombre_aula']) ?></em><?php endif; ?></span><?php endforeach; ?><?php if (!$scheduleGroups): ?><span class="offer-schedule-empty">Horario por definir</span><?php endif; ?></div></div>
                     <div class="offer-select-form student-offer-register">
                         <?php if ($offer['inscrito']): ?>
                             <p class="success">Ya estás inscrito en esta materia.</p>
-                        <?php elseif ($postulation && $postulation['estado'] === 'pendiente'): ?>
-                            <p class="offer-inline-note"><strong>Postulación pendiente.</strong> Administración debe aprobarla. No reserva un cupo mientras está en revisión.</p>
-                            <a class="btn btn-outline-primary" href="<?= e(app_url('postulaciones-tutoria/')) ?>">Ver mis postulaciones</a>
+                        <?php elseif (!empty($offer['turno_ocupado'])): ?>
+                            <p class="offer-inline-note">Ya tienes otra materia registrada en el turno <?= e(ucfirst($offer['turno'])) ?>. Puedes registrar materias de otros turnos.</p>
                         <?php elseif (!$registrationOpen): ?>
                             <p class="offer-inline-note"><?= $registrationStatus ?></p>
                         <?php elseif ($availableSeats < 1): ?>
                             <p class="empty-state">La oferta no tiene cupos disponibles.</p>
                         <?php else: ?>
-                            <?php if ($postulation && $postulation['estado'] === 'rechazada'): ?><p class="offer-inline-note">Tu postulación anterior fue rechazada<?= $postulation['observaciones_revision'] ? ': ' . e($postulation['observaciones_revision']) : '.' ?>. Puedes volver a postular.</p><?php endif; ?>
-                            <?php if (!$tutorAssigned): ?><p class="offer-inline-note">Postula a esta oferta. Al aprobar, Administración registrará tu inscripción y podrá asignar un tutor después. La postulación no reserva cupo.</p><?php endif; ?>
-                            <form method="post" action="<?= e(app_url('postulaciones-tutoria/crear.php')) ?>"><input type="hidden" name="id_oferta" value="<?= (int) $offer['id_oferta'] ?>"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><details><summary>Agregar motivo (opcional)</summary><label class="sr-only" for="motivo-<?= (int) $offer['id_oferta'] ?>">Motivo de postulación</label><textarea class="form-control" id="motivo-<?= (int) $offer['id_oferta'] ?>" name="motivo" rows="2" maxlength="1000" placeholder="Cuéntale a Administración por qué te interesa la oferta"></textarea></details><button class="btn btn-primary" type="submit">Postular a tutoría</button></form>
+                            <?php if (!$tutorAssigned): ?><p class="offer-inline-note">Puedes registrar la materia ahora. Administración podrá asignarte un tutor después.</p><?php endif; ?>
+                            <form method="post" action="<?= e(app_url('inscripciones/create.php')) ?>"><input type="hidden" name="id_oferta" value="<?= (int) $offer['id_oferta'] ?>"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><button class="btn btn-primary" type="submit">Registrar materia</button></form>
                         <?php endif; ?>
                     </div>
                 </article>

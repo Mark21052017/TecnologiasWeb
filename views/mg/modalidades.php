@@ -14,7 +14,7 @@
             <label class="mg-checkbox"><input type="checkbox" name="requiere_tutor" value="1"> Requiere tutor</label>
             <details class="mg-advanced-rules"><summary>Reglas avanzadas</summary>
             <label class="mg-checkbox"><input type="checkbox" name="permite_trabajo_grupal" value="1"> Permite intención de trabajo grupal</label>
-            <label>Máximo integrantes<input class="form-control" type="number" name="max_integrantes" min="2" max="20" placeholder="Requerido si permite grupo"></label>
+            <label>Máximo integrantes<input class="form-control" type="number" name="max_integrantes" min="2" max="20" placeholder="Vacío: usa el máximo global (<?= (int) (new MgConfiguracion())->effectiveValue('max_estudiantes_grupo', 3) ?>)"></label>
             <label class="mg-checkbox"><input type="checkbox" name="requiere_tema_preliminar" value="1" checked> Requiere tema preliminar</label>
             <label class="mg-checkbox"><input type="checkbox" name="requiere_descripcion" value="1" checked> Requiere descripción</label>
             <label class="mg-checkbox"><input type="checkbox" name="requiere_informes" value="1"> Requiere informes de avance</label>
@@ -25,10 +25,12 @@
             <label class="mg-checkbox"><input type="checkbox" name="requiere_informe_final" value="1"> Requiere informe final</label>
             <label class="mg-checkbox"><input type="checkbox" name="requiere_tribunal" value="1"> Requiere tribunal</label>
             <label class="mg-checkbox"><input type="checkbox" name="requiere_defensa" value="1"> Requiere defensa</label>
-            <label>Máximo de defensas<input class="form-control" type="number" name="max_defensas" min="1" max="20" placeholder="Sin límite configurado"></label>
-            <label>Avance requerido para defensa (%)<input class="form-control" type="number" name="avance_requerido_defensa" min="0" max="100" step="0.01"></label>
-            <label>Mínimo de miembros del tribunal<input class="form-control" type="number" name="miembros_minimos_tribunal" min="2" max="20"></label>
-            <label class="mg-checkbox"><input type="hidden" name="impide_tutor_tribunal" value="0"><input type="checkbox" name="impide_tutor_tribunal" value="1" checked> Impedir que el tutor integre su tribunal</label>
+            <label>Máximo de defensas<input class="form-control" type="number" name="max_defensas" min="1" max="20" placeholder="Global: <?= (int) (new MgConfiguracion())->effectiveValue('max_defensas', 2) ?>"></label>
+            <label>Avance requerido para defensa (%)<input class="form-control" type="number" name="avance_requerido_defensa" min="0" max="100" step="0.01" placeholder="Global: <?= e((string) (new MgConfiguracion())->effectiveValue('avance_requerido_defensa', 100)) ?>%"></label>
+            <label>Mínimo de miembros del tribunal<input class="form-control" type="number" name="miembros_minimos_tribunal" min="2" max="20" placeholder="Global: <?= (int) (new MgConfiguracion())->effectiveValue('miembros_tribunal_predeterminado', 3) ?>"></label>
+            <label>Mínimo de interesados (solo Examen de Grado)<input class="form-control" type="number" name="min_interesados" min="1" max="9999" placeholder="Sugerencia anterior: 12; requiere confirmación"></label>
+            <label>Promedio mínimo (solo Graduación por Excelencia)<input class="form-control" type="number" name="promedio_minimo" min="0" max="100" step="0.01" placeholder="Sugerencia anterior: 90; requiere confirmación"></label>
+            <label>Regla del tutor en el tribunal<select class="form-select" name="impide_tutor_tribunal"><option value="global" selected>Usar valor global</option><option value="1">Impedir que el tutor integre el tribunal</option><option value="0">Permitir al tutor como miembro</option></select></label>
             </details>
             <button class="btn btn-primary" type="submit">Agregar modalidad</button>
         </form>
@@ -46,7 +48,7 @@
                         <textarea class="form-control" aria-label="Descripción" name="descripcion" maxlength="1000" rows="1" placeholder="Descripción"><?= e($modality['descripcion'] ?? '') ?></textarea>
                         <details class="mg-advanced-rules"><summary>Reglas avanzadas</summary>
                         <label class="mg-checkbox"><input type="checkbox" name="permite_trabajo_grupal" value="1" <?= (int) $modality['permite_trabajo_grupal'] === 1 ? 'checked' : '' ?>> Permite grupo</label>
-                        <input class="form-control" aria-label="Máximo integrantes" type="number" name="max_integrantes" min="2" max="20" value="<?= e($modality['max_integrantes'] ?? '') ?>" placeholder="Máx. grupo">
+                        <input class="form-control" aria-label="Máximo integrantes" type="number" name="max_integrantes" min="2" max="20" value="<?= e($modality['max_integrantes'] ?? '') ?>" placeholder="Global: <?= (int) (new MgConfiguracion())->effectiveValue('max_estudiantes_grupo', 3) ?>">
                         <label class="mg-checkbox"><input type="checkbox" name="requiere_tema_preliminar" value="1" <?= (int) $modality['requiere_tema_preliminar'] === 1 ? 'checked' : '' ?>> Tema</label>
                         <label class="mg-checkbox"><input type="checkbox" name="requiere_descripcion" value="1" <?= (int) $modality['requiere_descripcion'] === 1 ? 'checked' : '' ?>> Descripción</label>
                         <label class="mg-checkbox"><input type="checkbox" name="requiere_informes" value="1" <?= (int) $modality['requiere_informes'] === 1 ? 'checked' : '' ?>> Informes</label>
@@ -57,10 +59,12 @@
                         <label class="mg-checkbox"><input type="checkbox" name="requiere_informe_final" value="1" <?= (int) $modality['requiere_informe_final'] === 1 ? 'checked' : '' ?>> Informe final</label>
                         <label class="mg-checkbox"><input type="checkbox" name="requiere_tribunal" value="1" <?= (int) $modality['requiere_tribunal'] === 1 ? 'checked' : '' ?>> Tribunal</label>
                         <label class="mg-checkbox"><input type="checkbox" name="requiere_defensa" value="1" <?= (int) $modality['requiere_defensa'] === 1 ? 'checked' : '' ?>> Defensa</label>
-                        <input class="form-control" aria-label="Máximo de defensas" type="number" name="max_defensas" min="1" max="20" value="<?= e($modality['max_defensas'] ?? '') ?>" placeholder="Máx. defensas">
-                        <input class="form-control" aria-label="Avance requerido para defensa" type="number" name="avance_requerido_defensa" min="0" max="100" step="0.01" value="<?= e($modality['avance_requerido_defensa'] ?? '') ?>" placeholder="Avance % defensa">
-                        <input class="form-control" aria-label="Miembros mínimos del tribunal" type="number" name="miembros_minimos_tribunal" min="2" max="20" value="<?= e($modality['miembros_minimos_tribunal'] ?? '') ?>" placeholder="Miembros tribunal">
-                        <label class="mg-checkbox"><input type="hidden" name="impide_tutor_tribunal" value="0"><input type="checkbox" name="impide_tutor_tribunal" value="1" <?= (int) $modality['impide_tutor_tribunal'] === 1 ? 'checked' : '' ?>> Tutor fuera tribunal</label>
+                        <input class="form-control" aria-label="Máximo de defensas" type="number" name="max_defensas" min="1" max="20" value="<?= e($modality['max_defensas'] ?? '') ?>" placeholder="Global: <?= (int) (new MgConfiguracion())->effectiveValue('max_defensas', 2) ?>">
+                        <input class="form-control" aria-label="Avance requerido para defensa" type="number" name="avance_requerido_defensa" min="0" max="100" step="0.01" value="<?= e($modality['avance_requerido_defensa'] ?? '') ?>" placeholder="Global: <?= e((string) (new MgConfiguracion())->effectiveValue('avance_requerido_defensa', 100)) ?>%">
+                        <input class="form-control" aria-label="Miembros mínimos del tribunal" type="number" name="miembros_minimos_tribunal" min="2" max="20" value="<?= e($modality['miembros_minimos_tribunal'] ?? '') ?>" placeholder="Global: <?= (int) (new MgConfiguracion())->effectiveValue('miembros_tribunal_predeterminado', 3) ?>">
+                        <select class="form-select" aria-label="Regla del tutor en el tribunal" name="impide_tutor_tribunal"><option value="global" <?= $modality['impide_tutor_tribunal'] === null ? 'selected' : '' ?>>Usar valor global</option><option value="1" <?= (string) $modality['impide_tutor_tribunal'] === '1' ? 'selected' : '' ?>>Impedir tutor</option><option value="0" <?= (string) $modality['impide_tutor_tribunal'] === '0' ? 'selected' : '' ?>>Permitir tutor</option></select>
+                        <input class="form-control" aria-label="Mínimo de interesados (Examen de Grado)" type="number" name="min_interesados" min="1" max="9999" value="<?= e($modality['min_interesados'] ?? '') ?>" placeholder="Sugerencia anterior: 12">
+                        <input class="form-control" aria-label="Promedio mínimo (Graduación por Excelencia)" type="number" name="promedio_minimo" min="0" max="100" step="0.01" value="<?= e($modality['promedio_minimo'] ?? '') ?>" placeholder="Sugerencia anterior: 90">
                         </details>
                         <span class="status <?= $modality['estado'] === 'activa' ? 'status-activo' : 'status-inactivo' ?>"><?= e($modality['estado']) ?></span>
                         <button class="btn btn-sm btn-outline-primary" type="submit">Guardar</button>

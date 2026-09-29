@@ -53,6 +53,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 $detail = $workId > 0 ? $controller->overview($workId) : null;
 $candidates = $controller->candidates();
 $allReady = $detail !== null && count(array_filter($detail['checklist'], static fn(array $item): bool => !$item['ok'])) === 0;
+$scheduleReady = $allReady || ($detail !== null && (new MgConfiguracion())->effectiveValue('permitir_defensa_requisitos_pendientes', false));
 $title = 'Defensas y cierre MG';
 $activePage = 'mg-defensas';
 require dirname(__DIR__, 2) . '/views/mg/defensas.php';

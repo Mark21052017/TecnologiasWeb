@@ -12,7 +12,7 @@
         </tbody></table></div><?php else: ?><p class="form-hint">No hay solicitudes para este filtro.</p><?php endif; ?>
     </section>
 
-    <?php if ($selectedRequest): $currentAcademic = $selectedRequest['verificacion_actual']; $currentAcademicComplete = $currentAcademic && (int) $currentAcademic['materias_requeridas'] > 0 && (int) $currentAcademic['materias_aprobadas'] === (int) $currentAcademic['materias_requeridas']; ?>
+    <?php if ($selectedRequest): $currentAcademic = $selectedRequest['verificacion_actual']; $currentAcademicComplete = (bool) $selectedRequest['academic_verification_ready']; ?>
         <section class="card mg-panel">
             <h2>Solicitud #<?= (int) $selectedRequest['id_solicitud'] ?> · <?= e($selectedRequest['estado']) ?></h2>
             <div class="stat-grid"><article class="stat-card"><span class="stat-label">Estudiante / RU</span><strong><?= e($selectedRequest['estudiante']) ?><br><?= e($selectedRequest['registro_universitario'] ?? '—') ?></strong></article><article class="stat-card"><span class="stat-label">Carrera</span><strong><?= e($selectedRequest['nombre_carrera']) ?></strong></article><article class="stat-card"><span class="stat-label">Modalidad</span><strong><?= e($selectedRequest['modalidad']) ?></strong></article><article class="stat-card"><span class="stat-label">Cuenta</span><strong><?= e($selectedRequest['estado_usuario']) ?></strong></article></div>
@@ -20,13 +20,49 @@
             <?php if ($selectedRequest['tema_preliminar']): ?><p><strong>Tema preliminar:</strong> <?= e($selectedRequest['tema_preliminar']) ?></p><?php endif; ?>
             <?php if ($selectedRequest['descripcion']): ?><p><strong>Descripción:</strong><br><?= nl2br(e($selectedRequest['descripcion'])) ?></p><?php endif; ?>
             <?php if ($selectedRequest['observaciones_estudiante']): ?><p><strong>Nota del estudiante:</strong><br><?= nl2br(e($selectedRequest['observaciones_estudiante'])) ?></p><?php endif; ?>
-            <h3>Verificación registrada al envío</h3>
-            <p>Plan #<?= e($selectedRequest['id_plan_verificado'] ?? '—') ?> · Materias aprobadas: <?= e($selectedRequest['materias_aprobadas_snapshot'] ?? '—') ?> / <?= e($selectedRequest['materias_requeridas_snapshot'] ?? '—') ?> · Promedio informativo: <?= $selectedRequest['promedio_snapshot'] === null ? '—' : e(number_format((float) $selectedRequest['promedio_snapshot'], 2)) ?> · Verificado: <?= e($selectedRequest['verificado_en'] ?? '—') ?></p>
+            <h3>Resumen académico registrado</h3>
+            <p>Fuente: <strong><?= e($selectedRequest['fuente_verificacion_academica'] ?? ($selectedRequest['evidencia_academica'] ? 'Documento pendiente de revisión' : 'Pendiente')) ?></strong> · Plan #<?= e($selectedRequest['id_plan_verificado'] ?? '—') ?> · Materias aprobadas: <?= e($selectedRequest['materias_aprobadas_snapshot'] ?? '—') ?> / <?= e($selectedRequest['materias_requeridas_snapshot'] ?? '—') ?> · Promedio informativo: <?= $selectedRequest['promedio_snapshot'] === null ? '—' : e(number_format((float) $selectedRequest['promedio_snapshot'], 2)) ?> · Verificado: <?= e($selectedRequest['verificado_en'] ?? '—') ?></p>
             <h3>Estado académico actual</h3>
             <?php if ($currentAcademic): ?><p>Plan <?= e($currentAcademic['codigo_plan'] . ' / ' . $currentAcademic['version_plan']) ?> · Aprobadas <?= (int) $currentAcademic['materias_aprobadas'] ?> / <?= (int) $currentAcademic['materias_requeridas'] ?> · Promedio <?= $currentAcademic['promedio_aprobadas'] === null ? '—' : e(number_format((float) $currentAcademic['promedio_aprobadas'], 2)) ?></p>
                 <?php if ($selectedRequest['materias_pendientes_actuales']): ?><ul><?php foreach ($selectedRequest['materias_pendientes_actuales'] as $subject): ?><li><?= e($subject['nombre_materia']) ?> — <?= $subject['registrada'] ? 'sin aprobación' : 'sin registro' ?></li><?php endforeach; ?></ul><?php endif; ?>
-            <?php else: ?><p class="alert">No existe un plan asignado con historial aprobado que permita verificar actualmente.</p><?php endif; ?>
+            <?php elseif ($selectedRequest['evidencia_academica']): ?><p class="alert">El historial oficial no está completo. Se usará el documento adjunto después de que Administración contraste las materias con el plan.</p>
+            <?php else: ?><p class="alert">No existe un plan asignado con historial aprobado ni un documento de calificaciones para verificar.</p><?php endif; ?>
             <p><strong>Modalidad aún disponible:</strong> <?= (int) $selectedRequest['modalidad_disponible'] === 1 ? 'Sí' : 'No' ?></p>
+        </section>
+
+        <?php $evidence = $selectedRequest['evidencia_academica']; ?>
+        <section class="card mg-panel">
+            <h3>Evidencia de calificaciones</h3>
+            <?php if ($evidence): ?>
+                <p>Versión <?= (int)$evidence['numero_version'] ?> · Estado: <strong><?= e($evidence['estado']) ?></strong> · Plan <?= e($evidence['codigo_plan'] ? $evidence['codigo_plan'] . ' / ' . $evidence['version_plan'] : ($evidence['plan_referencia'] ?: 'Sin plan asignado; verificar malla manualmente')) ?> · Subida por <?= e($evidence['subido_por']) ?> el <?= e($evidence['subido_en']) ?></p>
+                <p><a class="btn btn-sm btn-outline-primary" href="<?= e(app_url('modalidades-grado/solicitudes.php?id=' . $requestId . '&descargar_evidencia=' . (int)$evidence['id_evidencia'])) ?>">Abrir PDF privado</a></p>
+                <?php if ($evidence['comentario_estudiante']): ?><p><strong>Comentario del estudiante:</strong> <?= nl2br(e($evidence['comentario_estudiante'])) ?></p><?php endif; ?>
+                <?php if ($evidence['observacion_revision']): ?><p class="alert"><strong>Observación de revisión:</strong> <?= nl2br(e($evidence['observacion_revision'])) ?></p><?php endif; ?>
+                <?php if ($evidence['materias_requeridas'] !== null): ?><p><strong>Resultado verificado:</strong> <?= (int)$evidence['materias_aprobadas'] ?> / <?= (int)$evidence['materias_requeridas'] ?> materias aprobadas · Promedio <?= e(number_format((float)$evidence['promedio_verificado'],2)) ?> · Revisor <?= e($evidence['revisado_por'] ?? '—') ?></p>
+                    <?php if ($evidence['materias']): ?><div class="table-wrapper"><table><thead><tr><th>Materia obligatoria</th><th>Estado verificado</th><th>Nota</th><th>Periodo</th></tr></thead><tbody><?php foreach ($evidence['materias'] as $grade): ?><tr><td><?= e($grade['nombre_materia']) ?></td><td><?= e($grade['estado']) ?></td><td><?= e($grade['nota']) ?></td><td><?= e($grade['periodo'] ?? '—') ?></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
+                <?php endif; ?>
+            <?php else: ?><p>No hay un PDF adjunto. El estudiante debe cargar evidencia si el historial oficial no permite verificar el plan completo.</p><?php endif; ?>
+
+            <?php if ($selectedRequest['estado'] === 'en_revision' && $evidence && $evidence['estado'] === 'pendiente'): ?>
+                <h4>Revisar contra el plan asignado</h4>
+                <p>Abra el PDF y registre el estado, nota y periodo de cada materia obligatoria. Graduación por Excelencia exige promedio mayor que 90. Verificar el documento no aprueba la solicitud; la decisión se toma por separado abajo.</p>
+                <form method="post" action="<?= e(app_url('modalidades-grado/solicitudes.php?id=' . $requestId . '&estado=' . rawurlencode($state))) ?>">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="id_solicitud" value="<?= $requestId ?>"><input type="hidden" name="id_evidencia" value="<?= (int)$evidence['id_evidencia'] ?>">
+                    <?php if ($selectedRequest['materias_plan']): ?><div class="table-wrapper"><table><thead><tr><th>Materia obligatoria</th><th>Estado en certificado</th><th>Nota</th><th>Periodo</th></tr></thead><tbody>
+                        <?php foreach ($selectedRequest['materias_plan'] as $subject): $subjectId=(int)$subject['id_materia']; ?>
+                            <tr><td><?= e($subject['nombre_materia']) ?></td><td><select class="form-select" name="materias[<?= $subjectId ?>][estado]" required><option value="">Seleccione</option><option value="APROBADA">Aprobada</option><option value="REPROBADA">Reprobada</option></select></td><td><input class="form-control" type="number" min="0" max="100" step="0.01" name="materias[<?= $subjectId ?>][nota]" required></td><td><input class="form-control" maxlength="40" name="materias[<?= $subjectId ?>][periodo]" placeholder="Periodo" ></td></tr>
+                        <?php endforeach; ?>
+                    </tbody></table></div>
+                    <?php else: ?>
+                        <p class="alert">A este estudiante aún no se le asignó un plan digital. Contraste manualmente el certificado con la malla oficial de su carrera y registre <strong>todas</strong> las materias obligatorias. Cada línea: <code>Materia;APROBADA;nota;periodo</code>. Si falta alguna materia, observe el documento.</p>
+                        <label>Plan/malla oficial contrastada<input class="form-control" name="plan_referencia" maxlength="100" placeholder="Código y versión del plan" required></label>
+                        <label>Materias obligatorias verificadas<textarea class="form-control" name="materias_sin_plan" rows="10" placeholder="Matemática I;APROBADA;94;2025-1&#10;Base de Datos;APROBADA;92;2025-2" required></textarea></label>
+                        <label class="mg-checkbox"><input type="checkbox" name="confirma_materias_plan" value="1"> Confirmo que contrasté el PDF con la malla oficial y anoté todas las materias obligatorias.</label>
+                    <?php endif; ?>
+                    <label>Observación de revisión (obligatoria si observa)<textarea class="form-control" name="observacion_revision" maxlength="5000" rows="2"></textarea></label>
+                    <div class="mg-actions"><button class="btn btn-outline-primary" type="submit" name="accion" value="observar_evidencia" formnovalidate>Observar y devolver</button><button class="btn btn-primary" type="submit" name="accion" value="verificar_evidencia">Guardar verificación académica</button></div>
+                </form>
+            <?php elseif (!$evidence && $selectedRequest['estado'] === 'en_revision'): ?><p class="form-hint">El historial oficial no es suficiente y no hay documento que revisar; observe la solicitud o rechácela.</p><?php endif; ?>
         </section>
 
         <?php if ($selectedRequest['estado'] === 'enviada'): ?>

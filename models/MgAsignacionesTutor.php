@@ -6,15 +6,13 @@ final class MgAsignacionesTutor
 {
     public function capacityRule(): array
     {
-        $statement = Database::connection()->prepare(
-            'SELECT valor, estado_evidencia, fuente FROM mg_parametros WHERE clave = "tutor_max_estudiantes" LIMIT 1'
-        );
-        $statement->execute();
-        $row = $statement->fetch(PDO::FETCH_ASSOC) ?: [];
-        $limit = $row['estado_evidencia'] === 'confirmado' && is_numeric($row['valor'] ?? null) && (int) $row['valor'] > 0
-            ? (int) $row['valor']
-            : null;
-        return ['limite' => $limit, 'estado_evidencia' => $row['estado_evidencia'] ?? 'pendiente', 'fuente' => $row['fuente'] ?? null];
+        $parameter = (new MgConfiguracion())->parameter('tutor_max_estudiantes') ?? [];
+        $limit = (new MgConfiguracion())->effectiveValue('tutor_max_estudiantes', 3);
+        return [
+            'limite' => is_int($limit) && $limit > 0 ? $limit : null,
+            'estado_evidencia' => $parameter['estado_evidencia'] ?? 'pendiente',
+            'fuente' => $parameter['fuente'] ?? null,
+        ];
     }
 
     public function activeWorks(): array
@@ -107,6 +105,13 @@ final class MgAsignacionesTutor
             if ($current && (int) $current['id_tutor'] === $tutorId) {
                 throw new RuntimeException('Ese tutor ya está asignado al trabajo.');
             }
+            $configuration = new MgConfiguracion();
+            if ($current && !$configuration->effectiveValue('permitir_cambio_tutor', true)) {
+                throw new RuntimeException('La configuración actual no permite cambiar el tutor asignado.');
+            }
+            if ($current && $configuration->effectiveValue('motivo_cambio_tutor_obligatorio', true) && $note === '') {
+                throw new RuntimeException('Indique el motivo obligatorio para cambiar de tutor.');
+            }
 
             $tutorQuery = $pdo->prepare(
                 'SELECT t.id_tutor, u.nombre, u.apellido
@@ -120,22 +125,25 @@ final class MgAsignacionesTutor
                 throw new RuntimeException('Seleccione un tutor con perfil y cuenta activa.');
             }
 
-            $ruleQuery = $pdo->prepare('SELECT valor, estado_evidencia FROM mg_parametros WHERE clave = "tutor_max_estudiantes" LIMIT 1');
-            $ruleQuery->execute();
-            $rule = $ruleQuery->fetch(PDO::FETCH_ASSOC) ?: [];
-            $maxStudents = ($rule['estado_evidencia'] ?? '') === 'confirmado'
-                && is_numeric($rule['valor'] ?? null) && (int) $rule['valor'] > 0
-                ? (int) $rule['valor']
-                : null;
+            $maxStudents = $configuration->effectiveValue('tutor_max_estudiantes', 3);
+            $maxStudents = is_int($maxStudents) && $maxStudents > 0 ? $maxStudents : null;
             if ($maxStudents !== null) {
                 $load = $pdo->prepare(
                     'SELECT COUNT(DISTINCT i.id_estudiante)
                      FROM mg_asignaciones_tutor a
                      INNER JOIN mg_trabajo_integrantes ti ON ti.id_trabajo = a.id_trabajo AND ti.estado = "activo"
                      INNER JOIN mg_inscripciones i ON i.id_inscripcion = ti.id_inscripcion AND i.estado = "activa"
-                     WHERE a.id_tutor = :tutor AND a.estado = "activa"'
+                     WHERE a.id_tutor = :tutor AND a.estado = "activa"
+                       AND NOT EXISTS (
+                           SELECT 1 FROM mg_trabajo_integrantes selected_member
+                           INNER JOIN mg_inscripciones selected_enrollment
+                               ON selected_enrollment.id_inscripcion=selected_member.id_inscripcion AND selected_enrollment.estado="activa"
+                           WHERE selected_member.id_trabajo=:selected_work
+                             AND selected_member.id_estudiante=i.id_estudiante
+                             AND selected_member.estado="activo"
+                       )'
                 );
-                $load->execute(['tutor' => $tutorId]);
+                $load->execute(['tutor' => $tutorId, 'selected_work' => $workId]);
                 $currentLoad = (int) $load->fetchColumn();
                 if ($currentLoad + $workStudentCount > $maxStudents) {
                     throw new RuntimeException("La asignación dejaría al tutor con " . ($currentLoad + $workStudentCount) . " estudiantes, por encima del límite confirmado de {$maxStudents}.");

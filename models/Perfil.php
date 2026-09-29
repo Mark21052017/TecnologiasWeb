@@ -28,6 +28,35 @@ final class Perfil
         return $profile ?: null;
     }
 
+    public function publicTutorProfile(int $tutorId): ?array
+    {
+        $statement = Database::connection()->prepare(
+            <<<'SQL'
+                SELECT t.id_tutor, u.nombre, u.apellido, t.especialidad, t.biografia
+                FROM tutores t
+                INNER JOIN usuarios u ON u.id_usuario = t.id_usuario
+                    AND u.estado = 'activo'
+                WHERE t.id_tutor = :id_tutor
+                  AND EXISTS (
+                      SELECT 1
+                      FROM oferta_tutores ot
+                      INNER JOIN ofertas_tutoria o ON o.id_oferta = ot.id_oferta
+                      INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+                      WHERE ot.id_tutor = t.id_tutor
+                        AND ot.estado = 'confirmada'
+                        AND o.estado = 'publicada'
+                        AND p.estado IN ('publicado', 'cerrado')
+                        AND p.fecha_fin >= CURRENT_DATE
+                  )
+                LIMIT 1
+            SQL
+        );
+        $statement->execute(['id_tutor' => $tutorId]);
+        $profile = $statement->fetch();
+
+        return $profile ?: null;
+    }
+
     public function emailExists(string $email, int $excludeUserId): bool
     {
         $statement = Database::connection()->prepare(

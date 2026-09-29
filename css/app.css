@@ -1827,6 +1827,17 @@ tbody tr:hover {
     top: 1.5rem;
 }
 
+.public-tutor-profile {
+    margin-inline: auto;
+    max-width: 680px;
+    position: static;
+    text-align: left;
+}
+
+.public-tutor-profile .profile-photo-frame {
+    margin-left: 0;
+}
+
 .profile-photo-frame {
     align-items: center;
     background: linear-gradient(135deg, var(--navy), var(--accent));
@@ -2551,6 +2562,12 @@ tbody tr:hover {
 .offer-facts strong {
     font-size: 0.75rem;
     margin-top: 0.12rem;
+}
+
+.offer-facts .offer-tutor-link {
+    color: var(--accent-dark);
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
 }
 
 .offer-facts em {
@@ -3487,41 +3504,56 @@ tbody tr:hover {
     font-size: 0.72rem;
 }
 
-.mg-parameter-list {
-    display: grid;
-    gap: 0.65rem;
+.mg-parameter-group > summary {
+    align-items: center;
+    color: var(--heading);
+    cursor: pointer;
+    display: flex;
+    font-weight: 750;
+    justify-content: space-between;
+    list-style-position: inside;
+    padding: 0.25rem 0;
 }
 
-.mg-parameter-row {
-    align-items: end;
-    background: var(--soft);
-    border: 1px solid var(--line);
-    border-radius: 0.8rem;
-    display: grid;
-    gap: 0.7rem;
-    grid-template-columns: minmax(12rem, 1.4fr) minmax(7rem, 0.65fr) minmax(10rem, 1fr) minmax(8rem, 0.7fr) auto;
-    padding: 0.8rem;
+.mg-parameter-group[open] > summary {
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.75rem;
 }
 
-.mg-parameter-description {
-    align-self: center;
-    display: grid;
-    gap: 0.35rem;
-}
-
-.mg-parameter-description code {
-    color: var(--accent);
-    font-size: 0.73rem;
-    font-weight: 700;
-    overflow-wrap: anywhere;
-}
-
-.mg-parameter-description span {
+.mg-parameter-group > summary small {
     color: var(--muted);
     font-size: 0.75rem;
+    font-weight: 600;
 }
 
-.mg-parameter-row > label,
+.mg-simple-parameters h2 {
+    margin-bottom: 0.75rem;
+}
+
+.mg-simple-parameter {
+    align-items: center;
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(0, 1fr) 7rem auto;
+    padding: 0.9rem 0;
+}
+
+.mg-simple-parameter p {
+    color: var(--muted);
+    font-size: 0.82rem;
+    margin: 0.3rem 0;
+}
+
+.mg-simple-parameter small {
+    color: var(--muted);
+}
+
+.mg-simple-parameter .btn {
+    margin: 0;
+}
+
 .mg-form-grid > label,
 .mg-cohort-filter > label {
     display: grid;
@@ -3529,11 +3561,6 @@ tbody tr:hover {
     font-weight: 650;
     gap: 0.35rem;
     margin: 0;
-}
-
-.mg-parameter-row .btn {
-    margin: 0;
-    white-space: nowrap;
 }
 
 .mg-form-grid {
@@ -3746,14 +3773,6 @@ tbody tr:hover {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .mg-parameter-row {
-        grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.7fr) minmax(9rem, 1fr);
-    }
-
-    .mg-parameter-description {
-        grid-column: 1 / -1;
-    }
-
     .mg-modality-edit {
         grid-template-columns: minmax(8rem, 0.8fr) minmax(10rem, 1.3fr) minmax(7rem, 0.7fr);
     }
@@ -3766,17 +3785,13 @@ tbody tr:hover {
     }
 
     .mg-config-links,
-    .mg-parameter-row,
+    .mg-simple-parameter,
     .mg-form-grid,
     .mg-modality-edit {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .mg-parameter-description {
-        grid-column: auto;
-    }
-
-    .mg-parameter-row .btn,
+    .mg-simple-parameter .btn,
     .mg-form-grid .btn,
     .mg-form-grid > a {
         justify-self: stretch;

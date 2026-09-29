@@ -13,6 +13,23 @@ if (!$studentId) {
     exit('La cuenta no tiene un perfil de estudiante asociado.');
 }
 
+$evidenceDownloadId = filter_input(INPUT_GET, 'descargar_evidencia', FILTER_VALIDATE_INT);
+if ($evidenceDownloadId !== false && $evidenceDownloadId !== null && $evidenceDownloadId > 0) {
+    try {
+        $download = $controller->academicEvidenceDownload((int)$evidenceDownloadId, $studentId);
+    } catch (RuntimeException $exception) {
+        http_response_code(404);
+        exit('Documento de calificaciones no encontrado.');
+    }
+    header('Content-Type: application/pdf');
+    header('Content-Length: ' . (string)$download['size']);
+    header('Content-Disposition: inline; filename="calificaciones.pdf"');
+    header('Cache-Control: private, no-store');
+    header('X-Content-Type-Options: nosniff');
+    readfile($download['path']);
+    exit;
+}
+
 $errors = [];
 $message = flash_get('mg_request_message');
 $requestId = 0;
@@ -21,7 +38,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $requestId = (int) ($_POST['id_solicitud'] ?? 0);
     $action = (string) ($_POST['accion'] ?? 'guardar');
     try {
-        if ($action === 'cancelar') {
+        if ($action === 'subir_evidencia_academica') {
+            $controller->uploadAcademicEvidence($requestId, $studentId, (int)$user['id_usuario'], $_FILES['evidencia_academica'] ?? [], (string)($_POST['comentario_evidencia'] ?? ''));
+            flash_set('mg_request_message', 'El documento de calificaciones quedó adjuntado y pendiente de revisión administrativa.');
+        } elseif ($action === 'cancelar') {
             $controller->cancel($requestId, $studentId, (int) $user['id_usuario'], (string) ($_POST['observacion_estudiante'] ?? ''));
             flash_set('mg_request_message', 'La solicitud fue cancelada.');
         } elseif ($action === 'entregar_hito') {
@@ -75,6 +95,9 @@ if ($selectedId > 0) {
 } else {
     $selectedRequest = null;
 }
+$academicEvidenceReady = $selectedRequest
+    ? $controller->academicEvidenceReadyToSubmit($studentId, (int)$selectedRequest['id_solicitud'], $selectedRequest)
+    : false;
 $milestoneTasks = $selectedRequest && !empty($selectedRequest['id_trabajo'])
     ? (new MgSeguimientoHitosController())->tasksForStudent((int) $selectedRequest['id_trabajo'], $studentId)
     : [];
@@ -87,13 +110,32 @@ $studentStageResults = $selectedRequest && !empty($selectedRequest['id_trabajo']
 $studentDefenseInfo = $selectedRequest && !empty($selectedRequest['id_trabajo'])
     ? (new MgDefensasController())->studentInfo((int) $selectedRequest['id_trabajo'], $studentId)
     : [];
-$studentDefenseInfo = $selectedRequest && !empty($selectedRequest['id_trabajo'])
-    ? (new MgDefensasController())->studentDefenseInfo((int) $selectedRequest['id_trabajo'], $studentId)
-    : [];
-$editing = $selectedRequest && in_array($selectedRequest['estado'], ['borrador', 'observada'], true);
+$configuration = new MgConfiguracion();
+$editableStates = ['borrador'];
+if ($configuration->effectiveValue('permitir_corregir_solicitud_observada', true)) {
+    $editableStates[] = 'observada';
+}
+if ($configuration->effectiveValue('permitir_editar_solicitud_enviada', false)) {
+    $editableStates = array_merge($editableStates, ['enviada', 'en_revision']);
+}
+$editing = $selectedRequest && in_array($selectedRequest['estado'], $editableStates, true);
+$canSubmitRequest = !$selectedRequest || in_array($selectedRequest['estado'], ['borrador', 'observada'], true);
+if ($selectedRequest && $selectedRequest['estado'] === 'observada'
+    && !$configuration->effectiveValue('permitir_reenviar_solicitud_observada', true)) {
+    $canSubmitRequest = false;
+}
+$cancellableStates = ['borrador'];
+if ($configuration->effectiveValue('permitir_corregir_solicitud_observada', true)) {
+    $cancellableStates[] = 'observada';
+}
+if ($configuration->effectiveValue('permitir_cancelar_solicitud_enviada', false)) {
+    $cancellableStates = array_merge($cancellableStates, ['enviada', 'en_revision']);
+}
+$canCancel = $selectedRequest && in_array($selectedRequest['estado'], $cancellableStates, true);
 $canCreate = $activeRequest === null;
 $modalities = $controller->modalitiesForStudent($studentId);
 $academicVerification = $controller->academicVerification($studentId);
+$assignedPlan = (new MgAcademico())->assignedPlan($studentId);
 $pendingSubjects = $controller->pendingSubjects($studentId);
 $title = 'Mi Modalidad de Grado';
 $activePage = 'mg-solicitud';

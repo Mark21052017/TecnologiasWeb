@@ -35,7 +35,7 @@ final class MgInscripcionesGrado
 
     public function openGroups(): array
     {
-        return Database::connection()->query(
+        $groups = Database::connection()->query(
             'SELECT w.id_trabajo, w.codigo, w.id_cohorte, w.id_modalidad, w.tema,
                     c.codigo AS codigo_cohorte, m.nombre AS modalidad, m.max_integrantes,
                     COUNT(ti.id_integrante) AS integrantes, MIN(e.id_carrera) AS id_carrera,
@@ -47,13 +47,17 @@ final class MgInscripcionesGrado
              LEFT JOIN mg_inscripciones i ON i.id_inscripcion = ti.id_inscripcion
              LEFT JOIN estudiantes e ON e.id_estudiante = i.id_estudiante
              WHERE w.estado = "activo" AND w.tipo_trabajo = "grupal"
-               AND m.estado = "activa" AND m.permite_trabajo_grupal = 1 AND m.max_integrantes IS NOT NULL
+                AND m.estado = "activa" AND m.permite_trabajo_grupal = 1
              GROUP BY w.id_trabajo, w.codigo, w.id_cohorte, w.id_modalidad, w.tema,
-                       c.codigo, c.fecha_inicio, m.nombre, m.max_integrantes
-             HAVING COUNT(ti.id_integrante) < m.max_integrantes
-                AND COUNT(DISTINCT e.id_carrera) = 1
-             ORDER BY c.fecha_inicio DESC, w.codigo'
+                        c.codigo, c.fecha_inicio, m.nombre, m.max_integrantes
+             HAVING COUNT(DISTINCT e.id_carrera) = 1
+              ORDER BY c.fecha_inicio DESC, w.codigo'
         )->fetchAll(PDO::FETCH_ASSOC);
+        $globalMaximum = (int) (new MgConfiguracion())->effectiveValue('max_estudiantes_grupo', 3);
+        return array_values(array_filter($groups, static function (array $group) use ($globalMaximum): bool {
+            $maximum = $group['max_integrantes'] !== null ? (int) $group['max_integrantes'] : $globalMaximum;
+            return (int) $group['integrantes'] < $maximum;
+        }));
     }
 
     public function enroll(array $input, int $adminId): int
@@ -81,6 +85,7 @@ final class MgInscripcionesGrado
         try {
             $requestQuery = $pdo->prepare(
                 'SELECT s.*, e.id_carrera, u.estado AS estado_usuario, m.codigo AS codigo_modalidad,
+                        m.min_interesados, m.promedio_minimo,
                         m.nombre AS modalidad, m.permite_trabajo_grupal, m.max_integrantes,
                         m.requiere_tema_preliminar, m.requiere_descripcion, h.id_habilitacion
                  FROM mg_solicitudes s
@@ -117,8 +122,9 @@ final class MgInscripcionesGrado
                 throw new RuntimeException('El estudiante ya tiene una inscripción MG activa.');
             }
 
-            $this->assertCurrentAcademicEligibility($pdo, (int) $request['id_estudiante']);
+            $this->assertCurrentAcademicEligibility($pdo, (int) $request['id_estudiante'], $request);
             $this->assertRequestContentStillValid($request);
+            $this->assertMinimumInterested($pdo, $request);
             if (in_array($assignment, ['nuevo_grupo', 'grupo_existente'], true)) {
                 $this->assertGroupAllowed($request);
             }
@@ -166,16 +172,30 @@ final class MgInscripcionesGrado
         }
     }
 
-    private function assertCurrentAcademicEligibility(PDO $pdo, int $studentId): void
+    private function assertCurrentAcademicEligibility(PDO $pdo, int $studentId, array $request): void
     {
-        $rows = (new MgAcademico())->studentVerification($studentId);
-        if (!$rows) {
-            throw new RuntimeException('El estudiante ya no tiene un plan e historial aprobados vigentes.');
+        $verification = (new MgSolicitudes())->academicVerificationForDecision($studentId, $request);
+        if ($verification === null) {
+            throw new RuntimeException('La inscripción requiere un historial oficial completo o una evidencia de calificaciones verificada y vigente.');
         }
-        $summary = $rows[0];
-        if ((int) $summary['materias_requeridas'] < 1
-            || (int) $summary['materias_aprobadas'] !== (int) $summary['materias_requeridas']) {
-            throw new RuntimeException('La inscripción requiere todas las materias obligatorias aprobadas.');
+    }
+
+    private function assertMinimumInterested(PDO $pdo, array $request): void
+    {
+        if ($request['codigo_modalidad'] !== 'EXAMEN_GRADO' || $request['min_interesados'] === null) {
+            return;
+        }
+        $interested = $pdo->prepare(
+            'SELECT COUNT(DISTINCT s.id_estudiante)
+             FROM mg_solicitudes s
+             INNER JOIN estudiantes e ON e.id_estudiante=s.id_estudiante
+             WHERE s.id_modalidad=:modalidad AND e.id_carrera=:carrera
+               AND s.estado IN ("enviada","en_revision","observada","aprobada")'
+        );
+        $interested->execute(['modalidad' => (int)$request['id_modalidad'], 'carrera' => (int)$request['id_carrera']]);
+        $count=(int)$interested->fetchColumn();
+        if ($count < (int)$request['min_interesados']) {
+            throw new RuntimeException('Examen de Grado requiere ' . (int)$request['min_interesados'] . ' interesados; actualmente hay ' . $count . '.');
         }
     }
 
@@ -191,8 +211,11 @@ final class MgInscripcionesGrado
 
     private function assertGroupAllowed(array $request): void
     {
-        if ((int) $request['permite_trabajo_grupal'] !== 1 || (int) $request['max_integrantes'] < 2) {
-            throw new RuntimeException('La modalidad no está configurada para trabajo grupal con un máximo de integrantes.');
+        $maximum = $request['max_integrantes'] !== null
+            ? (int) $request['max_integrantes']
+            : (int) (new MgConfiguracion())->effectiveValue('max_estudiantes_grupo', 3);
+        if ((int) $request['permite_trabajo_grupal'] !== 1 || $maximum < 2) {
+            throw new RuntimeException('La modalidad no permite trabajo grupal con un máximo de integrantes válido.');
         }
     }
 
@@ -218,7 +241,10 @@ final class MgInscripcionesGrado
         }
         $count = $pdo->prepare('SELECT COUNT(*) FROM mg_trabajo_integrantes WHERE id_trabajo = :id AND estado = "activo"');
         $count->execute(['id' => $workId]);
-        if ((int) $count->fetchColumn() >= (int) $request['max_integrantes']) {
+        $maximum = $request['max_integrantes'] !== null
+            ? (int) $request['max_integrantes']
+            : (int) (new MgConfiguracion())->effectiveValue('max_estudiantes_grupo', 3);
+        if ((int) $count->fetchColumn() >= $maximum) {
             throw new RuntimeException('El grupo alcanzó el máximo de integrantes configurado en la modalidad.');
         }
         $career = $pdo->prepare(
@@ -254,7 +280,7 @@ final class MgInscripcionesGrado
         ];
         $prefix = $prefixes[strtoupper((string) $request['codigo_modalidad'])] ?? 'MG';
         $year = substr((string) $cohort['fecha_inicio'], 0, 4);
-        $code = sprintf('%s-%s-%05d', $prefix, $year, $workId);
+        $code = sprintf('%s-%s-%03d', $prefix, $year, $workId);
         $update = $pdo->prepare('UPDATE mg_trabajos SET codigo = :codigo WHERE id_trabajo = :id');
         $update->execute(['codigo' => $code, 'id' => $workId]);
         return $workId;

@@ -21,6 +21,11 @@ final class MgConfiguracionController
         return $this->model->parameters();
     }
 
+    public function parameterHistory(): array
+    {
+        return $this->model->parameterHistory();
+    }
+
     public function updateParameter(array $input, int $userId): ?string
     {
         $key = trim((string) ($input['clave'] ?? ''));
@@ -28,31 +33,39 @@ final class MgConfiguracionController
         if (!$parameter) {
             return 'El parámetro seleccionado no existe.';
         }
+        if (!MgConfiguracion::isGeneralRule($key) || (int) ($parameter['visible'] ?? 1) !== 1) {
+            return 'Esta regla ya no se modifica desde Parámetros generales.';
+        }
+        if ((int) ($parameter['solo_lectura'] ?? 0) === 1) {
+            return 'Este parámetro es una regla fija del sistema y no se puede modificar.';
+        }
 
         $rawValue = trim((string) ($input['valor'] ?? ''));
         $value = $rawValue === '' ? null : $rawValue;
-        if ($value !== null) {
-            $valid = match ($parameter['tipo_dato']) {
-                'entero' => preg_match('/^-?\d+$/', $value) === 1,
-                'decimal' => preg_match('/^-?\d+(?:\.\d+)?$/', $value) === 1,
-                default => mb_strlen($value) <= 255,
-            };
-            if (!$valid) {
-                return 'El valor no coincide con el tipo de dato del parámetro.';
+        if ($value === null) {
+            return 'Ingrese un valor para el parámetro.';
+        }
+        $valid = match ($parameter['tipo_dato']) {
+            'entero' => preg_match('/^-?\d+$/', $value) === 1,
+            'decimal' => preg_match('/^-?\d+(?:\.\d+)?$/', $value) === 1,
+            'booleano' => in_array($value, ['0', '1'], true),
+            default => mb_strlen($value) <= 255,
+        };
+        if (!$valid) {
+            return 'El valor no coincide con el tipo de dato del parámetro.';
+        }
+        if (in_array($parameter['tipo_dato'], ['entero', 'decimal'], true)) {
+            $numericValue = (float) $value;
+            if ($parameter['minimo'] !== null && $numericValue < (float) $parameter['minimo']) {
+                return 'El valor no puede ser menor que ' . (float) $parameter['minimo'] . '.';
+            }
+            if ($parameter['maximo'] !== null && $numericValue > (float) $parameter['maximo']) {
+                return 'El valor no puede ser mayor que ' . (float) $parameter['maximo'] . '.';
             }
         }
 
-        $evidence = trim((string) ($input['estado_evidencia'] ?? ''));
-        if (!in_array($evidence, ['confirmado', 'pendiente', 'propuesta'], true)) {
-            return 'Seleccione un estado de evidencia válido.';
-        }
-        $source = trim((string) ($input['fuente'] ?? ''));
-        if (mb_strlen($source) > 255) {
-            return 'La fuente no puede superar 255 caracteres.';
-        }
-
         try {
-            $this->model->updateParameter($key, $value, $source, $evidence, $userId);
+            $this->model->updateParameter($key, $value, 'Política institucional MG', 'confirmado', $userId);
             return null;
         } catch (Throwable $exception) {
             error_log($exception->getMessage());
@@ -86,8 +99,8 @@ final class MgConfiguracionController
             'requiere_informe_final' => (string) ($input['requiere_informe_final'] ?? '0'),
             'requiere_tribunal' => (string) ($input['requiere_tribunal'] ?? '0'),
             'requiere_defensa' => (string) ($input['requiere_defensa'] ?? '0'),
-            'impide_tutor_tribunal' => (string) ($input['impide_tutor_tribunal'] ?? '1'),
         ];
+        $tutorTribunalRule = (string) ($input['impide_tutor_tribunal'] ?? 'global');
         if (!preg_match('/^[A-Z0-9_]{3,60}$/', $code)) {
             return 'Use un código de 3 a 60 caracteres con letras, números y guion bajo.';
         }
@@ -102,16 +115,24 @@ final class MgConfiguracionController
             || !in_array($requiresDescription, ['0', '1'], true)
             || !in_array($requiresReports, ['0', '1'], true)
             || !in_array($requiresAttendance, ['0', '1'], true)
+            || !in_array($tutorTribunalRule, ['global', '0', '1'], true)
             || array_filter($ruleFlags, static fn (string $value): bool => !in_array($value, ['0', '1'], true))) {
             return 'Seleccione valores válidos para las reglas de la modalidad.';
         }
         $groupAllowed = $groupInput === '1';
         $maximum = null;
         if ($groupAllowed) {
-            if (preg_match('/^(?:[2-9]|1[0-9]|20)$/', $maxGroup) !== 1) {
-                return 'Indique un máximo de integrantes entre 2 y 20 para el trabajo grupal.';
+            if ($maxGroup === '') {
+                $globalMaximum = (int)(new MgConfiguracion())->effectiveValue('max_estudiantes_grupo',3);
+                if ($globalMaximum < 2 || $globalMaximum > 20) {
+                    return 'El máximo global de integrantes debe estar entre 2 y 20 para usarlo como predeterminado.';
+                }
+            } else {
+                if (preg_match('/^(?:[2-9]|1[0-9]|20)$/', $maxGroup) !== 1) {
+                    return 'Indique un máximo de integrantes entre 2 y 20 para el trabajo grupal.';
+                }
+                $maximum = (int) $maxGroup;
             }
-            $maximum = (int) $maxGroup;
         }
         $attendanceValue = null;
         if ($attendanceMinimum !== '') {
@@ -139,6 +160,22 @@ final class MgConfiguracionController
             }
             $requiredProgress = number_format((float) $requiredProgressRaw, 2, '.', '');
         }
+        $minInterestedRaw = trim((string) ($input['min_interesados'] ?? ''));
+        $minimumInterested = null;
+        if ($code === 'EXAMEN_GRADO' && $minInterestedRaw !== '') {
+            if (preg_match('/^[1-9][0-9]{0,3}$/', $minInterestedRaw) !== 1) {
+                return 'El mínimo de interesados para Examen de Grado debe estar entre 1 y 9.999.';
+            }
+            $minimumInterested = (int)$minInterestedRaw;
+        }
+        $averageMinimumRaw = trim((string) ($input['promedio_minimo'] ?? ''));
+        $averageMinimum = null;
+        if ($code === 'GRADUACION_EXCELENCIA' && $averageMinimumRaw !== '') {
+            if (!is_numeric($averageMinimumRaw) || (float)$averageMinimumRaw < 0 || (float)$averageMinimumRaw > 100) {
+                return 'El promedio mínimo de Graduación por Excelencia debe estar entre 0 y 100.';
+            }
+            $averageMinimum = number_format((float)$averageMinimumRaw, 2, '.', '');
+        }
         $minMembersRaw = trim((string) ($input['miembros_minimos_tribunal'] ?? ''));
         $minMembers = null;
         if ($ruleFlags['requiere_tribunal'] === '1' && $minMembersRaw !== '') {
@@ -165,8 +202,10 @@ final class MgConfiguracionController
                 'requiere_defensa' => $ruleFlags['requiere_defensa'] === '1',
                 'max_defensas' => $maxDefenses,
                 'avance_requerido_defensa' => $requiredProgress,
-                'impide_tutor_tribunal' => $ruleFlags['impide_tutor_tribunal'] === '1',
+                'impide_tutor_tribunal' => $tutorTribunalRule === 'global' ? null : $tutorTribunalRule === '1',
                 'miembros_minimos_tribunal' => $minMembers,
+                'min_interesados' => $minimumInterested,
+                'promedio_minimo' => $averageMinimum,
             ]);
             return null;
         } catch (PDOException $exception) {
@@ -207,7 +246,13 @@ final class MgConfiguracionController
         $name = trim((string) ($input['nombre'] ?? ''));
         $start = trim((string) ($input['fecha_inicio'] ?? ''));
         $end = trim((string) ($input['fecha_fin'] ?? ''));
-        if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{1,39}$/', $code)) {
+        if ($id === null) {
+            $code = '';
+        }
+        if ($code === '' && $id !== null) {
+            return 'Ingrese el código actual de la cohorte.';
+        }
+        if ($code !== '' && !preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{1,39}$/', $code)) {
             return 'Ingrese un código de cohorte válido (2 a 40 caracteres).';
         }
         if ($name === '' || mb_strlen($name) > 150) {
@@ -223,6 +268,8 @@ final class MgConfiguracionController
         } catch (PDOException $exception) {
             error_log($exception->getMessage());
             return 'Ya existe una cohorte con ese código.';
+        } catch (RuntimeException $exception) {
+            return $exception->getMessage();
         } catch (Throwable $exception) {
             error_log($exception->getMessage());
             return 'No se pudo guardar la cohorte.';
@@ -235,7 +282,7 @@ final class MgConfiguracionController
         if ($id === false || $id < 1 || !in_array((string) ($input['activa'] ?? ''), ['0', '1'], true)) {
             return 'La solicitud de estado de cohorte no es válida.';
         }
-        return $this->model->setCohortActive((int) $id, $input['activa'] === '1')
+        return $this->model->setCohortActive((int) $id, $input['activa'] === '1', (int) Auth::user()['id_usuario'])
             ? null
             : 'La cohorte seleccionada no existe.';
     }
@@ -337,6 +384,9 @@ final class MgConfiguracionController
         if ($date !== '' && !$this->validDate($date)) {
             return 'Ingrese una fecha límite válida.';
         }
+        if ($date === '' && (new MgConfiguracion())->effectiveValue('requerir_fecha_limite_hito', false)) {
+            return 'La configuración requiere una fecha límite para este hito.';
+        }
         if ($date !== '' && ($date < $cohort['fecha_inicio'] || $date > $cohort['fecha_fin'])) {
             return 'La fecha límite del hito debe estar dentro del periodo de la cohorte.';
         }
@@ -377,7 +427,7 @@ final class MgConfiguracionController
         if ($id === false || $id < 1 || !in_array((string) ($input['estado'] ?? ''), ['activo', 'inactivo'], true)) {
             return 'La solicitud de estado del hito no es válida.';
         }
-        return $this->model->setMilestoneActive((int) $id, $input['estado'] === 'activo')
+        return $this->model->setMilestoneActive((int) $id, $input['estado'] === 'activo', (int) Auth::user()['id_usuario'])
             ? null
             : 'El hito seleccionado no existe.';
     }

@@ -69,6 +69,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 }
 
 $detail = $workId > 0 ? $controller->detail($workId, $userId, $role) : null;
+$sessionControlEnabled = (new MgConfiguracion())->effectiveValue('control_tutorias_mg', true);
 $title = 'Seguimiento MG';
 $activePage = $role === 'administrador' ? 'mg-seguimiento' : 'mg-mis-trabajos';
 $capacityRule = (new MgAsignacionesTutorController())->capacityRule();

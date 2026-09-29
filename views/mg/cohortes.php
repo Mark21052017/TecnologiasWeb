@@ -10,7 +10,7 @@
             <form class="mg-form-grid" method="post" action="<?= e(app_url('modalidades-grado/cohortes.php')) ?>">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <?php if ($cohort): ?><input type="hidden" name="id_cohorte" value="<?= (int) $cohort['id_cohorte'] ?>"><?php endif; ?>
-                <label>Código<input class="form-control" name="codigo" required maxlength="40" value="<?= e($cohort['codigo'] ?? '') ?>" placeholder="G1-2026-03"></label>
+                <label>Código<?php if (!$cohort): ?><input class="form-control" value="" placeholder="Se genera al guardar" readonly><small>Ejemplo: MG-2027-01</small><?php else: ?><input class="form-control" name="codigo" required maxlength="40" value="<?= e($cohort['codigo']) ?>"><?php endif; ?></label>
                 <label>Nombre<input class="form-control" name="nombre" required maxlength="150" value="<?= e($cohort['nombre'] ?? '') ?>" placeholder="Grupo 1 - Marzo 2026"></label>
                 <label>Fecha de inicio<input class="form-control" type="date" name="fecha_inicio" required value="<?= e($cohort['fecha_inicio'] ?? '') ?>"></label>
                 <label>Fecha de fin<input class="form-control" type="date" name="fecha_fin" required value="<?= e($cohort['fecha_fin'] ?? '') ?>"></label>

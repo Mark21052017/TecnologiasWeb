@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 final class MgSeguimiento
 {
-    private const MAX_REPORT_BYTES = 5_000_000;
     private const RESULTS = ['pendiente', 'en_curso', 'observado', 'aprobado', 'reprobado'];
 
     public function availableWorks(?int $tutorUserId = null): array
@@ -77,8 +76,15 @@ final class MgSeguimiento
         );
         $statement->execute(['trabajo' => $workId]);
         $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        $configuration = new MgConfiguracion();
         foreach ($rows as &$row) {
             $row['versiones'] = $row['id_informe'] ? $this->reportVersions((int) $row['id_informe']) : [];
+            if (!$configuration->effectiveValue('marcar_hitos_vencidos_automaticamente', true)) {
+                $row['vencido'] = 0;
+            }
+            if (!$configuration->effectiveValue('control_informes', true)) {
+                $row['requiere_informes'] = 0;
+            }
         }
         unset($row);
         return $rows;
@@ -118,8 +124,10 @@ final class MgSeguimiento
         }
         $temporaryPath = (string) $file['tmp_name'];
         $size = (int) ($file['size'] ?? 0);
-        if ($size < 1 || $size > self::MAX_REPORT_BYTES) {
-            throw new RuntimeException('El informe PDF no puede superar 5 MB.');
+        $configuration = new MgConfiguracion();
+        $maximumBytes = max(1, (int)$configuration->effectiveValue('tamano_maximo_informe_mb',5)) * 1_000_000;
+        if ($size < 1 || $size > $maximumBytes) {
+            throw new RuntimeException('El informe PDF supera el tamaño máximo de ' . number_format($maximumBytes / 1_000_000, 0) . ' MB.');
         }
         if (strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION)) !== 'pdf'
             || (new finfo(FILEINFO_MIME_TYPE))->file($temporaryPath) !== 'application/pdf') {
@@ -150,14 +158,30 @@ final class MgSeguimiento
         $pdo->beginTransaction();
         try {
             $task = $this->lockStudentTask($pdo, $taskId, $studentId, $actorId);
-            if ($task['tipo'] !== 'informe' || (int) $task['requiere_informes'] !== 1) {
+            if (!$configuration->effectiveValue('control_informes', true)
+                || $task['tipo'] !== 'informe' || (int) $task['requiere_informes'] !== 1) {
                 throw new RuntimeException('Este hito no está configurado como entrega de informe.');
+            }
+            if ($task['fecha_limite'] !== null && $task['fecha_limite'] < date('Y-m-d')
+                && !$configuration->effectiveValue('permitir_entrega_informe_fuera_plazo', true)) {
+                throw new RuntimeException('El plazo de entrega del informe ya venció.');
+            }
+            if ($progressValue !== null && $task['avance_esperado_pct'] !== null
+                && !$configuration->effectiveValue('permitir_avance_superior_esperado', true)
+                && (float)$progressValue > (float)$task['avance_esperado_pct']) {
+                throw new RuntimeException('El avance no puede superar el porcentaje esperado para este hito.');
             }
             $reportQuery = $pdo->prepare('SELECT id_informe,estado,version_actual FROM mg_informes_grado WHERE id_seguimiento=:id FOR UPDATE');
             $reportQuery->execute(['id' => $taskId]);
             $report = $reportQuery->fetch(PDO::FETCH_ASSOC) ?: null;
             if ($report && $report['estado'] !== 'observado') {
                 throw new RuntimeException('Solo se puede entregar un informe pendiente o una corrección solicitada.');
+            }
+            if ($report) {
+                $maxCorrections = (int)$configuration->effectiveValue('max_correcciones_informe', PHP_INT_MAX);
+                if ((int)$report['version_actual'] - 1 >= $maxCorrections) {
+                    throw new RuntimeException('El informe alcanzó el máximo de correcciones permitidas.');
+                }
             }
             if ($task['estado'] !== 'pendiente' && (!$report || $report['estado'] !== 'observado')) {
                 throw new RuntimeException('Este hito ya tiene una entrega registrada.');
@@ -255,6 +279,9 @@ final class MgSeguimiento
             if ((int) $version['requiere_informes'] !== 1) {
                 throw new RuntimeException('Esta modalidad no requiere informes versionados para este proceso.');
             }
+            if (!(new MgConfiguracion())->effectiveValue('control_informes', true)) {
+                throw new RuntimeException('El control general de informes está desactivado.');
+            }
             $this->assertCanManageWork((int) $version['id_trabajo'], $actorId, $role, $pdo);
             if ($action === 'iniciar_revision') {
                 if (!in_array($version['estado'], ['entregado', 'corregido'], true)) {
@@ -342,6 +369,9 @@ final class MgSeguimiento
 
     public function createSession(int $workId, int $actorId, string $role, array $input): int
     {
+        if (!(new MgConfiguracion())->effectiveValue('control_tutorias_mg', true)) {
+            throw new RuntimeException('La programación del control de tutorías MG está desactivada por configuración.');
+        }
         $type = (string) ($input['tipo'] ?? 'seguimiento');
         $title = trim((string) ($input['titulo'] ?? ''));
         $description = trim((string) ($input['descripcion'] ?? ''));
@@ -494,6 +524,13 @@ final class MgSeguimiento
             if (!$workQuery->fetchColumn()) {
                 throw new RuntimeException('Solo se pueden registrar resultados para trabajos activos.');
             }
+            if ($stage === 'mdg2' && (new MgConfiguracion())->effectiveValue('mdg1_aprobado_antes_mdg2', true)) {
+                $stageOne = $pdo->prepare('SELECT estado FROM mg_resultados_etapa WHERE id_trabajo=:work AND etapa="mdg1" FOR UPDATE');
+                $stageOne->execute(['work' => $workId]);
+                if ($stageOne->fetchColumn() !== 'aprobado') {
+                    throw new RuntimeException('MDG I debe estar aprobado antes de iniciar o registrar MDG II.');
+                }
+            }
             $select = $pdo->prepare('SELECT id_resultado,estado FROM mg_resultados_etapa WHERE id_trabajo=:work AND etapa=:stage FOR UPDATE');
             $select->execute(['work' => $workId, 'stage' => $stage]);
             $old = $select->fetch(PDO::FETCH_ASSOC) ?: null;
@@ -632,7 +669,7 @@ final class MgSeguimiento
     private function lockStudentTask(PDO $pdo, int $taskId, int $studentId, int $actorId): array
     {
         $statement = $pdo->prepare(
-            'SELECT sh.id_seguimiento,sh.id_trabajo,sh.id_hito,sh.estado,h.tipo,m.requiere_informes,
+            'SELECT sh.id_seguimiento,sh.id_trabajo,sh.id_hito,sh.estado,sh.fecha_limite,h.avance_esperado_pct,h.tipo,m.requiere_informes,
                     i.id_solicitud,u.estado AS estado_usuario
              FROM mg_seguimiento_hitos sh
              INNER JOIN mg_trabajo_integrantes ti ON ti.id_trabajo=sh.id_trabajo AND ti.id_estudiante=:estudiante AND ti.estado="activo"

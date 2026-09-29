@@ -66,7 +66,7 @@ Los roles base son `administrador`, `tutor` y `estudiante`; Modalidades de Grado
 
 MG es un subsistema separado de `/tutorias/`; no reutiliza `tutorias`, bloques horarios ni estados de sesiones. La primera migración aditiva `db/030_mg_base.sql` crea roles, permisos granulares, parámetros configurables, modalidades, cohortes y hitos de calendario. Las pantallas de configuración están bajo `/modalidades-grado/`.
 
-Las migraciones de este repositorio siguen `db/001_*.sql` a `db/033_*.sql`; las migraciones MG comienzan en `030`. No existe `database/init.sql`: se conservan las migraciones manuales de `db/`. El dump local `docker/mysql/init/00-testdb.sql` es una instantánea de inicialización, no el historial de migraciones.
+Las migraciones de este repositorio siguen `db/001_*.sql` a `db/045_*.sql`; las migraciones MG comienzan en `030`. No existe `database/init.sql`: se conservan las migraciones manuales de `db/`. El dump local `docker/mysql/init/00-testdb.sql` es una instantánea de inicialización, no el historial de migraciones.
 
 Para aplicar la migración base al MySQL que corre en Docker, desde la raíz del proyecto:
 
@@ -76,7 +76,37 @@ docker exec tecnologiasweb-db sh -c 'mysql --protocol=socket -uroot -p"$MYSQL_RO
 docker exec tecnologiasweb-db rm -f /tmp/030_mg_base.sql
 ```
 
-Puede ejecutarse otra vez para comprobar idempotencia. Los hitos con tipo `informe` determinan la cantidad de informes de una cohorte. Los valores con evidencia `pendiente` o `propuesta` no deben convertirse en restricciones.
+La migración `db/043_mg_general_parameters.sql` se aplica después de las migraciones MG hasta `db/042_*.sql`. Amplía `mg_parametros` de forma aditiva, registra el historial de cambios y mantiene las claves históricas ya migradas fuera de la pantalla global. Ejecútela con el cliente configurado en UTF-8:
+
+```powershell
+docker cp .\db\043_mg_general_parameters.sql tecnologiasweb-db:/tmp/043_mg_general_parameters.sql
+docker exec tecnologiasweb-db sh -c 'mysql --default-character-set=utf8mb4 --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" testdb < /tmp/043_mg_general_parameters.sql'
+docker exec tecnologiasweb-db rm -f /tmp/043_mg_general_parameters.sql
+```
+
+Después de `043`, aplique `db/044_mg_simplify_general_parameters.sql`. Conserva todos los valores y el historial, y deja visibles solo seis límites compartidos; el backend ignora los antiguos interruptores y propuestas. Los requisitos propios de cada modalidad siguen en el catálogo Modalidades. Los códigos de cohorte y trabajo se generan automáticamente con formatos fijos; los códigos existentes no cambian.
+
+```powershell
+docker cp .\db\044_mg_simplify_general_parameters.sql tecnologiasweb-db:/tmp/044_mg_simplify_general_parameters.sql
+docker exec tecnologiasweb-db sh -c 'mysql --default-character-set=utf8mb4 --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" testdb < /tmp/044_mg_simplify_general_parameters.sql'
+docker exec tecnologiasweb-db rm -f /tmp/044_mg_simplify_general_parameters.sql
+```
+
+Después, aplique `db/045_mg_solicitud_academic_evidence.sql` para habilitar la carga y revisión privada de documentos de calificaciones asociados a solicitudes MG:
+
+```powershell
+docker cp .\db\045_mg_solicitud_academic_evidence.sql tecnologiasweb-db:/tmp/045_mg_solicitud_academic_evidence.sql
+docker exec tecnologiasweb-db sh -c 'mysql --default-character-set=utf8mb4 --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" testdb < /tmp/045_mg_solicitud_academic_evidence.sql'
+docker exec tecnologiasweb-db rm -f /tmp/045_mg_solicitud_academic_evidence.sql
+```
+
+Después de desplegar el código en Railway, aplicar estas migraciones en su base vinculada desde el contenedor web:
+
+```bash
+railway ssh --service web --environment production php tools/apply-mg-migrations.php
+```
+
+El ejecutor está limitado a las migraciones MG 043–045 y admite su repetición idempotente.
 
 Para cargar cohortes e hitos claramente identificados como demostración en un entorno local, aplicar `db/mg_demo_data.sql`. El seed es repetible, crea dos cohortes y muestra cómo puede variar la cantidad de informes por cohorte; no se ejecuta automáticamente ni debe confundirse con datos institucionales.
 

@@ -23,6 +23,11 @@ final class PerfilController
         return $this->model->findByUserId($userId);
     }
 
+    public function publicTutorProfile(int $tutorId): ?array
+    {
+        return $this->model->publicTutorProfile($tutorId);
+    }
+
     public function updatePersonalData(int $userId, string $role, array $input): array
     {
         $data = [

@@ -21,6 +21,16 @@ final class InscripcionesController
         return $this->model->confirmedTutorOptions($offerIds);
     }
 
+    public function register(int $studentId, array $input): void
+    {
+        $offerId = filter_var($input['id_oferta'] ?? null, FILTER_VALIDATE_INT);
+        if ($offerId === false || $offerId < 1) {
+            throw new RuntimeException('Seleccione una oferta publicada válida.');
+        }
+
+        $this->model->create($studentId, (int) $offerId);
+    }
+
     public function assignTutor(array $input): ?string
     {
         $enrollmentId = filter_var($input['id_inscripcion'] ?? null, FILTER_VALIDATE_INT);

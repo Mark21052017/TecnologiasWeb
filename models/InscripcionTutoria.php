@@ -244,7 +244,7 @@ final class InscripcionTutoria
             }
 
             $offer = $pdo->prepare(
-                "SELECT o.cupo, o.estado, p.estado AS periodo_estado,
+                "SELECT o.cupo, o.id_turno, o.estado, p.estado AS periodo_estado,
                         p.inscripcion_inicio, p.inscripcion_fin,
                         p.fecha_fin
                  FROM ofertas_tutoria o
@@ -276,6 +276,27 @@ final class InscripcionTutoria
             }
             if ($existingEnrollment && $existingEnrollment['estado'] === 'finalizada') {
                 throw new RuntimeException('La inscripcion anterior ya fue finalizada.');
+            }
+
+            $sameTurn = $pdo->prepare(
+                "SELECT m.nombre_materia
+                 FROM inscripciones_tutoria i
+                 INNER JOIN ofertas_tutoria enrolled_offer ON enrolled_offer.id_oferta = i.id_oferta
+                 INNER JOIN materias m ON m.id_materia = enrolled_offer.id_materia
+                 WHERE i.id_estudiante = :id_estudiante
+                   AND i.estado = 'inscrita'
+                   AND enrolled_offer.id_turno = :id_turno
+                   AND enrolled_offer.id_oferta <> :id_oferta
+                 LIMIT 1"
+            );
+            $sameTurn->execute([
+                'id_estudiante' => $studentId,
+                'id_turno' => (int) $offerData['id_turno'],
+                'id_oferta' => $offerId,
+            ]);
+            $sameTurnSubject = $sameTurn->fetchColumn();
+            if ($sameTurnSubject !== false) {
+                throw new RuntimeException('Ya estás inscrito en ' . $sameTurnSubject . ' en este turno. Puedes registrar materias de otros turnos.');
             }
 
             $count = $pdo->prepare("SELECT COUNT(*) FROM inscripciones_tutoria WHERE id_oferta = :id_oferta AND estado = 'inscrita'");

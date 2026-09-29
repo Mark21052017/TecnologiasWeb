@@ -62,6 +62,21 @@ final class MgSolicitudesController
         $this->model->submit($requestId, $studentId, $actorId);
     }
 
+    public function uploadAcademicEvidence(int $requestId, int $studentId, int $actorId, array $file, string $comment): int
+    {
+        return $this->model->uploadAcademicEvidence($requestId, $studentId, $actorId, $file, $comment);
+    }
+
+    public function academicEvidenceDownload(int $evidenceId, ?int $studentId = null): array
+    {
+        return $this->model->academicEvidenceDownload($evidenceId, $studentId);
+    }
+
+    public function academicEvidenceReadyToSubmit(int $studentId, int $requestId, array $request): bool
+    {
+        return $this->model->academicEvidenceReadyToSubmit($studentId, $requestId, $request);
+    }
+
     public function cancel(int $requestId, int $studentId, int $actorId, string $note): void
     {
         $this->model->cancelOwn($requestId, $studentId, $actorId, trim($note));
@@ -80,6 +95,11 @@ final class MgSolicitudesController
     public function review(int $requestId, int $reviewerId, string $action, string $note): void
     {
         $this->model->review($requestId, $reviewerId, $action, $note);
+    }
+
+    public function reviewAcademicEvidence(int $requestId, int $adminId, string $action, array $input): void
+    {
+        $this->model->reviewAcademicEvidence($requestId, $adminId, $action, $input);
     }
 
     public function habilitate(int $requestId, int $adminId, string $note): void

@@ -1,23 +1,51 @@
-<?php require __DIR__ . '/../layouts/header.php'; ?>
+<?php
+$labels = [
+    'max_estudiantes_grupo' => 'Estudiantes por grupo',
+    'tutor_max_estudiantes' => 'Estudiantes activos por tutor',
+    'asistencia_minima_pct' => 'Asistencia mínima',
+    'avance_requerido_defensa' => 'Avance mínimo para defensa',
+    'miembros_tribunal_predeterminado' => 'Miembros del tribunal',
+    'max_defensas' => 'Intentos de defensa',
+];
+$parameterGroups = [];
+foreach ($parameters as $parameter) {
+    $parameterGroups[$parameter['categoria']][] = $parameter;
+}
+$configuration = new MgConfiguracion();
+require __DIR__ . '/../layouts/header.php';
+?>
 <main class="container mg-page">
-    <div class="page-heading"><div><span class="hero-kicker">Configuración MG</span><h1>Parámetros</h1><p>Los valores no confirmados se mantienen como propuestas o pendientes y no bloquean operaciones.</p></div><a class="btn btn-outline-secondary" href="<?= e(app_url('modalidades-grado/configuracion.php')) ?>">Volver a Configuración</a></div>
+    <div class="page-heading">
+        <div><span class="hero-kicker">Configuración MG</span><h1>Reglas generales</h1><p>Define los límites que comparten las modalidades. Si una modalidad necesita un valor diferente, configúralo en <a href="<?= e(app_url('modalidades-grado/modalidades.php')) ?>">Modalidades</a>.</p></div>
+        <a class="btn btn-outline-secondary" href="<?= e(app_url('modalidades-grado/configuracion.php')) ?>">Volver a Configuración</a>
+    </div>
     <?php if ($message): ?><p class="success" role="status"><?= e($message) ?></p><?php endif; ?>
     <?php if ($errors): ?><div class="alert" role="alert"><ul><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div><?php endif; ?>
-    <section class="card mg-panel">
-        <div class="section-heading"><div><h2>Valores configurables</h2><p>La clave es estable para el sistema; se puede actualizar valor, fuente y evidencia.</p></div></div>
-        <div class="mg-parameter-list">
-            <?php foreach ($parameters as $parameter): ?>
-                <form class="mg-parameter-row" method="post" action="<?= e(app_url('modalidades-grado/parametros.php')) ?>">
+
+    <?php foreach ($parameterGroups as $category => $items): ?>
+        <section class="card mg-panel mg-simple-parameters">
+            <h2><?= e($category) ?></h2>
+            <?php foreach ($items as $parameter): ?>
+                <form class="mg-simple-parameter" method="post" action="<?= e(app_url('modalidades-grado/parametros.php')) ?>">
                     <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="clave" value="<?= e($parameter['clave']) ?>">
-                    <div class="mg-parameter-description"><code><?= e($parameter['clave']) ?></code><span><?= e($parameter['descripcion']) ?></span></div>
-                    <label>Valor<input class="form-control" name="valor" type="<?= $parameter['tipo_dato'] === 'texto' ? 'text' : 'number' ?>" <?= $parameter['tipo_dato'] === 'entero' ? 'step="1"' : ($parameter['tipo_dato'] === 'decimal' ? 'step="0.01"' : '') ?> value="<?= e($parameter['valor'] ?? '') ?>" placeholder="Pendiente"></label>
-                    <label>Fuente<input class="form-control" name="fuente" maxlength="255" value="<?= e($parameter['fuente'] ?? '') ?>"></label>
-                    <label>Evidencia<select class="form-select" name="estado_evidencia" required><?php foreach (['confirmado' => 'Confirmado', 'pendiente' => 'Pendiente', 'propuesta' => 'Propuesta'] as $value => $label): ?><option value="<?= e($value) ?>" <?= $parameter['estado_evidencia'] === $value ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
+                    <div>
+                        <label for="param-<?= e($parameter['clave']) ?>"><strong><?= e($labels[$parameter['clave']]) ?><?= $parameter['tipo_dato'] === 'decimal' ? ' (%)' : '' ?></strong></label>
+                        <p><?= e($parameter['descripcion']) ?></p>
+                        <small>Valor inicial: <?= e($parameter['valor_defecto']) ?><?= $parameter['tipo_dato'] === 'decimal' ? '%' : '' ?>. Se aplica donde la modalidad no define un valor propio.</small>
+                    </div>
+                    <input class="form-control" id="param-<?= e($parameter['clave']) ?>" type="number" name="valor" step="<?= $parameter['tipo_dato'] === 'entero' ? '1' : '0.01' ?>" <?= $parameter['minimo'] !== null ? 'min="' . e($parameter['minimo']) . '"' : '' ?> <?= $parameter['maximo'] !== null ? 'max="' . e($parameter['maximo']) . '"' : '' ?> value="<?= e((string) $configuration->effectiveValue($parameter['clave'])) ?>" required>
                     <button class="btn btn-sm btn-primary" type="submit">Guardar</button>
                 </form>
             <?php endforeach; ?>
-        </div>
-    </section>
+        </section>
+    <?php endforeach; ?>
+
+    <details class="card mg-panel mg-parameter-group">
+        <summary><span>Historial de cambios</span><small><?= count($parameterHistory) ?> cambio<?= count($parameterHistory) === 1 ? '' : 's' ?> recientes</small></summary>
+        <?php if ($parameterHistory): ?><div class="table-wrapper"><table><thead><tr><th>Fecha</th><th>Regla</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead><tbody>
+            <?php foreach ($parameterHistory as $event): ?><tr><td><?= e($event['ocurrido_en']) ?></td><td><?= e($labels[$event['clave']] ?? $event['clave']) ?></td><td><?= e($event['valor_anterior'] ?? '—') ?></td><td><?= e($event['valor_nuevo'] ?? '—') ?></td><td><?= e($event['actor']) ?></td></tr><?php endforeach; ?>
+        </tbody></table></div><?php else: ?><p class="form-hint">Aún no hay cambios registrados.</p><?php endif; ?>
+    </details>
 </main>
 <?php require __DIR__ . '/../layouts/footer.php'; ?>

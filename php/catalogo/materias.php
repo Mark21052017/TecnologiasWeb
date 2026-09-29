@@ -8,7 +8,11 @@ $activePage = 'materias-disponibles';
 $user = Auth::user();
 $studentId = (new Tutoria())->studentIdByUserId((int) $user['id_usuario']);
 $subjects = (new OfertasController())->publicOffers($studentId);
-$postulationsByOffer = $studentId ? (new PostulacionesTutoriaController())->latestStatusByOffer($studentId) : [];
+$tutorsByOffer = (new OfertaTutoria())->confirmedTutorsForOffers(array_column($subjects, 'id_oferta'));
+foreach ($subjects as &$subject) {
+    $subject['tutores_asignados'] = $tutorsByOffer[(int) $subject['id_oferta']] ?? [];
+}
+unset($subject);
 $message = (string) ($_GET['message'] ?? '') === 'created' ? 'Inscripcion registrada correctamente.' : null;
 $error = (string) ($_GET['error'] ?? '');
 

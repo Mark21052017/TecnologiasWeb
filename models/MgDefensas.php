@@ -6,9 +6,9 @@ final class MgDefensas
 {
     public function activeWorks(): array
     {
-        return Database::connection()->query(
+        $works = Database::connection()->query(
             'SELECT w.id_trabajo,w.codigo,w.tema,w.estado AS estado_trabajo,m.nombre AS modalidad,
-                    m.requiere_defensa,m.requiere_tribunal,c.codigo AS codigo_cohorte,c.nombre AS cohorte,
+                    m.requiere_defensa,m.requiere_tribunal,m.max_defensas,c.codigo AS codigo_cohorte,c.nombre AS cohorte,
                     cl.resultado AS cierre
              FROM mg_trabajos w INNER JOIN mg_modalidades m ON m.id_modalidad=w.id_modalidad
              INNER JOIN mg_cohortes c ON c.id_cohorte=w.id_cohorte
@@ -16,6 +16,13 @@ final class MgDefensas
              WHERE w.estado IN ("activo","finalizado")
              ORDER BY FIELD(w.estado,"activo","finalizado","cancelado"),c.codigo,w.codigo'
         )->fetchAll(PDO::FETCH_ASSOC);
+        $configuration = new MgConfiguracion();
+        $defaultMaximum = (int)$configuration->effectiveValue('max_defensas',2);
+        foreach ($works as &$work) {
+            $work['max_defensas_efectivo'] = $work['max_defensas'] !== null ? (int)$work['max_defensas'] : $defaultMaximum;
+        }
+        unset($work);
+        return $works;
     }
 
     public function overview(int $workId): ?array
@@ -34,6 +41,9 @@ final class MgDefensas
         );
         $statement->execute(['id'=>$workId]);$work=$statement->fetch(PDO::FETCH_ASSOC);
         if(!$work){return null;}
+        $work['max_defensas_efectivo'] = $work['max_defensas'] !== null
+            ? (int)$work['max_defensas']
+            : (int)(new MgConfiguracion())->effectiveValue('max_defensas',2);
         $work['checklist']=$this->checklist($workId);
         $work['tribunales']=$this->tribunals($workId);
         $work['tribunal_actual']=$this->currentTribunalSummary($workId);
@@ -103,6 +113,7 @@ final class MgDefensas
         );
         $query->execute(['id'=>$workId]);$rules=$query->fetch(PDO::FETCH_ASSOC);
         if(!$rules){return [];}
+        $configuration = new MgConfiguracion();
         $items=[];
         $count=Database::connection()->prepare('SELECT COUNT(*) FROM mg_trabajo_integrantes ti INNER JOIN mg_inscripciones i ON i.id_inscripcion=ti.id_inscripcion WHERE ti.id_trabajo=:work AND ti.estado="activo" AND i.estado="activa"');
         $count->execute(['work'=>$workId]);$memberCount=(int)$count->fetchColumn();
@@ -117,29 +128,32 @@ final class MgDefensas
             $q=Database::connection()->prepare('SELECT estado FROM mg_resultados_etapa WHERE id_trabajo=:work AND etapa=:stage LIMIT 1');$q->execute(['work'=>$workId,'stage'=>$stage]);$state=$q->fetchColumn();
             $items[]=['key'=>$stage,'nombre'=>strtoupper($stage).' aprobado','ok'=>$state==='aprobado','detalle'=>$state?:'Sin resultado registrado'];
         }
-        if((int)$rules['requiere_informes']===1){
+        if((int)$rules['requiere_informes']===1 && $configuration->effectiveValue('control_informes', true)){
             $q=Database::connection()->prepare('SELECT COUNT(*) total,COUNT(CASE WHEN sh.estado="aprobado" AND ri.estado="aprobado" THEN 1 END) aprobados FROM mg_seguimiento_hitos sh INNER JOIN mg_calendario h ON h.id_hito=sh.id_hito AND h.estado="activo" AND h.tipo="informe" LEFT JOIN mg_informes_grado ri ON ri.id_seguimiento=sh.id_seguimiento WHERE sh.id_trabajo=:work');
             $q->execute(['work'=>$workId]);$n=$q->fetch(PDO::FETCH_ASSOC);
             $items[]=['key'=>'informes','nombre'=>'Informes requeridos aprobados','ok'=>(int)$n['total']>0&&(int)$n['total']===(int)$n['aprobados'],'detalle'=>(int)$n['aprobados'].' / '.(int)$n['total'].' aprobados'];
         }
-        if((int)$rules['requiere_informe_final']===1){
+        if((int)$rules['requiere_informe_final']===1 && $configuration->effectiveValue('control_informes', true)){
             $q=Database::connection()->prepare('SELECT COUNT(*) total,COUNT(CASE WHEN sh.estado="aprobado" AND ri.estado="aprobado" THEN 1 END) aprobados FROM mg_seguimiento_hitos sh INNER JOIN mg_calendario h ON h.id_hito=sh.id_hito AND h.estado="activo" AND h.tipo="informe" LEFT JOIN mg_informes_grado ri ON ri.id_seguimiento=sh.id_seguimiento WHERE sh.id_trabajo=:work AND LOWER(h.nombre) LIKE "%final%"');
             $q->execute(['work'=>$workId]);$n=$q->fetch(PDO::FETCH_ASSOC);
             $items[]=['key'=>'informe_final','nombre'=>'Informe final aprobado','ok'=>(int)$n['total']>0&&(int)$n['total']===(int)$n['aprobados'],'detalle'=>(int)$n['aprobados'].' / '.(int)$n['total'].' aprobados'];
         }
-        if((int)$rules['requiere_asistencia']===1){
-            $attendance=$this->attendanceByStudent($workId);$minimum=$rules['asistencia_minima_pct']===null?null:(float)$rules['asistencia_minima_pct'];
+        if((int)$rules['requiere_asistencia']===1 && $configuration->effectiveValue('control_asistencia', true)){
+            $attendance=$this->attendanceByStudent($workId);$minimum=$rules['asistencia_minima_pct']===null?(float)$configuration->effectiveValue('asistencia_minima_pct',80):(float)$rules['asistencia_minima_pct'];
             $ok=$minimum!==null&&count($attendance)===$memberCount&&$memberCount>0;
             foreach($attendance as $row){if((int)$row['total']<1||(float)$row['porcentaje']<$minimum){$ok=false;}}
             $items[]=['key'=>'asistencia','nombre'=>'Asistencia mínima','ok'=>$ok,'detalle'=>$minimum===null?'Falta configurar el porcentaje mínimo.':'Mínimo '.$minimum.'%; '.$this->attendanceDetail($attendance)];
         }
-        if($rules['avance_requerido_defensa']!==null){
-            $q=Database::connection()->prepare('SELECT COUNT(avance_real_pct) total,AVG(avance_real_pct) promedio FROM mg_seguimiento_hitos WHERE id_trabajo=:work');$q->execute(['work'=>$workId]);$n=$q->fetch(PDO::FETCH_ASSOC);$target=(float)$rules['avance_requerido_defensa'];
+        if((int)$rules['requiere_defensa']===1&&$configuration->effectiveValue('control_avance', true)){
+            $q=Database::connection()->prepare('SELECT COUNT(avance_real_pct) total,AVG(avance_real_pct) promedio FROM mg_seguimiento_hitos WHERE id_trabajo=:work');$q->execute(['work'=>$workId]);$n=$q->fetch(PDO::FETCH_ASSOC);$target=$rules['avance_requerido_defensa']===null?(float)$configuration->effectiveValue('avance_requerido_defensa',100):(float)$rules['avance_requerido_defensa'];
             $items[]=['key'=>'avance','nombre'=>'Avance requerido','ok'=>(int)$n['total']>0&&(float)$n['promedio']>=$target,'detalle'=>$n['promedio']===null?'Sin avances registrados':number_format((float)$n['promedio'],2).'% / '.$target.'%'];
         }
         if((int)$rules['requiere_tribunal']===1){
-            $tribunal=$this->currentTribunalSummary($workId);$min=max(2,(int)($rules['miembros_minimos_tribunal']??2));$ok=$tribunal&&(int)$tribunal['total_miembros']>=$min&&(int)$tribunal['presidentes']===1;
-            if($ok&&(int)$rules['impide_tutor_tribunal']===1&&$tribunal['tutor_id_usuario']!==null){$q=Database::connection()->prepare('SELECT 1 FROM mg_tribunal_miembros WHERE id_tribunal=:id AND id_usuario=:user LIMIT 1');$q->execute(['id'=>$tribunal['id_tribunal'],'user'=>(int)$tribunal['tutor_id_usuario']]);if($q->fetchColumn()){$ok=false;}}
+            $tribunal=$this->currentTribunalSummary($workId);$min=max(2,(int)($rules['miembros_minimos_tribunal']??$configuration->effectiveValue('miembros_tribunal_predeterminado',3)));$ok=$tribunal&&(int)$tribunal['total_miembros']>=$min&&(int)$tribunal['presidentes']===1;
+            $tutorMayJoin = $rules['impide_tutor_tribunal'] === null
+                ? (bool)$configuration->effectiveValue('tutor_puede_integrar_tribunal',false)
+                : (int)$rules['impide_tutor_tribunal']===0;
+            if($ok&&!$tutorMayJoin&&$tribunal['tutor_id_usuario']!==null){$q=Database::connection()->prepare('SELECT 1 FROM mg_tribunal_miembros WHERE id_tribunal=:id AND id_usuario=:user LIMIT 1');$q->execute(['id'=>$tribunal['id_tribunal'],'user'=>(int)$tribunal['tutor_id_usuario']]);if($q->fetchColumn()){$ok=false;}}
             $items[]=['key'=>'tribunal','nombre'=>'Tribunal conformado','ok'=>(bool)$ok,'detalle'=>$tribunal?(int)$tribunal['total_miembros'].' miembro(s), '.(int)$tribunal['presidentes'].' presidente(s)':'Sin tribunal activo'];
         }
         return $items;
@@ -170,13 +184,18 @@ final class MgDefensas
         try{
             $q=$pdo->prepare('SELECT w.estado,m.requiere_tribunal,m.impide_tutor_tribunal,m.miembros_minimos_tribunal FROM mg_trabajos w INNER JOIN mg_modalidades m ON m.id_modalidad=w.id_modalidad WHERE w.id_trabajo=:work FOR UPDATE');$q->execute(['work'=>$workId]);$rules=$q->fetch(PDO::FETCH_ASSOC);
             if(!$rules||$rules['estado']!=='activo'){throw new RuntimeException('Seleccione un trabajo activo.');}
-            $minimum=max(2,(int)($rules['miembros_minimos_tribunal']??2));if(count($selected)<$minimum){throw new RuntimeException("Esta modalidad requiere al menos {$minimum} integrantes.");}
-            $tutor=$pdo->prepare('SELECT t.id_usuario FROM mg_asignaciones_tutor a INNER JOIN tutores t ON t.id_tutor=a.id_tutor WHERE a.id_trabajo=:work AND a.estado="activa" LIMIT 1');$tutor->execute(['work'=>$workId]);$tutorUser=$tutor->fetchColumn();
-            if((int)$rules['impide_tutor_tribunal']===1&&$tutorUser&&in_array((int)$tutorUser,$selected,true)){throw new RuntimeException('La modalidad impide incluir al tutor como miembro del tribunal.');}
+             $configuration = new MgConfiguracion();
+             $minimum=max(2,(int)($rules['miembros_minimos_tribunal']??$configuration->effectiveValue('miembros_tribunal_predeterminado',3)));if(count($selected)<$minimum){throw new RuntimeException("Esta modalidad requiere al menos {$minimum} integrantes.");}
+             $tutor=$pdo->prepare('SELECT t.id_usuario FROM mg_asignaciones_tutor a INNER JOIN tutores t ON t.id_tutor=a.id_tutor WHERE a.id_trabajo=:work AND a.estado="activa" LIMIT 1');$tutor->execute(['work'=>$workId]);$tutorUser=$tutor->fetchColumn();
+             $tutorMayJoin = $rules['impide_tutor_tribunal'] === null
+                 ? (bool)$configuration->effectiveValue('tutor_puede_integrar_tribunal',false)
+                 : (int)$rules['impide_tutor_tribunal']===0;
+             if(!$tutorMayJoin&&$tutorUser&&in_array((int)$tutorUser,$selected,true)){throw new RuntimeException('La modalidad o la regla general impide incluir al tutor como miembro del tribunal.');}
             $marks=implode(',',array_fill(0,count($selected),'?'));$valid=$pdo->prepare("SELECT id_usuario FROM usuarios u INNER JOIN roles r ON r.id_rol=u.id_rol WHERE u.estado='activo' AND r.nombre_rol IN ('tutor','coordinador_mg','auxiliar_mg') AND u.id_usuario IN ($marks) FOR UPDATE");$valid->execute($selected);
             if(count(array_map('intval',$valid->fetchAll(PDO::FETCH_COLUMN)))!==count($selected)){throw new RuntimeException('Todos los miembros deben ser usuarios activos elegibles.');}
-            $current=$pdo->prepare('SELECT id_tribunal FROM mg_tribunales WHERE id_trabajo=:work AND estado="activo" FOR UPDATE');$current->execute(['work'=>$workId]);$old=(int)$current->fetchColumn();
-            if($old){$pdo->prepare('UPDATE mg_tribunales SET estado="reemplazado",finalizado_en=CURRENT_TIMESTAMP WHERE id_tribunal=:id')->execute(['id'=>$old]);}
+             $current=$pdo->prepare('SELECT id_tribunal FROM mg_tribunales WHERE id_trabajo=:work AND estado="activo" FOR UPDATE');$current->execute(['work'=>$workId]);$old=(int)$current->fetchColumn();
+             if($old&&!$configuration->effectiveValue('permitir_modificar_tribunal_asignado',true)){throw new RuntimeException('La configuración actual no permite modificar un tribunal ya asignado.');}
+             if($old){$pdo->prepare('UPDATE mg_tribunales SET estado="reemplazado",finalizado_en=CURRENT_TIMESTAMP WHERE id_tribunal=:id')->execute(['id'=>$old]);}
             $pdo->prepare('INSERT INTO mg_tribunales (id_trabajo,designado_por,observacion) VALUES (:work,:admin,:note)')->execute(['work'=>$workId,'admin'=>$adminId,'note'=>$note!==''?$note:null]);$tribunal=(int)$pdo->lastInsertId();
             $save=$pdo->prepare('INSERT INTO mg_tribunal_miembros (id_tribunal,id_usuario,rol) VALUES (:tribunal,:user,:role)');$save->execute(['tribunal'=>$tribunal,'user'=>$presidentId,'role'=>'presidente']);
             foreach($members as $id){$save->execute(['tribunal'=>$tribunal,'user'=>$id,'role'=>'miembro']);}
@@ -193,11 +212,19 @@ final class MgDefensas
         try{
             $q=$pdo->prepare('SELECT w.estado,m.requiere_defensa,m.requiere_tribunal,m.max_defensas FROM mg_trabajos w INNER JOIN mg_modalidades m ON m.id_modalidad=w.id_modalidad WHERE w.id_trabajo=:work FOR UPDATE');$q->execute(['work'=>$workId]);$rule=$q->fetch(PDO::FETCH_ASSOC);
             if(!$rule||$rule['estado']!=='activo'||(int)$rule['requiere_defensa']!==1){throw new RuntimeException('La modalidad no requiere defensa o el trabajo no está activo.');}
-            $this->requireReady($this->checklist($workId));
-            $pending=$pdo->prepare('SELECT id_defensa FROM mg_defensas WHERE id_trabajo=:work AND estado="programada" FOR UPDATE');$pending->execute(['work'=>$workId]);if($pending->fetchColumn()){throw new RuntimeException('Ya hay una defensa pendiente; reprográmela desde ese registro.');}
-            $attempts=$pdo->prepare('SELECT COUNT(*) FROM mg_defensas WHERE id_trabajo=:work AND estado<>"cancelada"');$attempts->execute(['work'=>$workId]);$attemptCount=(int)$attempts->fetchColumn();
-            if($rule['max_defensas']!==null&&(int)$rule['max_defensas']>0&&$attemptCount>=(int)$rule['max_defensas']){throw new RuntimeException('Se alcanzó el máximo de defensas configurado.');}
-            $tribunal=$this->currentTribunal($workId);if((int)$rule['requiere_tribunal']===1&&(!$tribunal||(int)$tribunal['presidentes']!==1)){throw new RuntimeException('Asigne un tribunal válido antes de programar defensa.');}
+             $configuration = new MgConfiguracion();
+             if (!$configuration->effectiveValue('permitir_defensa_requisitos_pendientes', false)) {
+                 $this->requireReady($this->checklist($workId));
+             }
+             $pending=$pdo->prepare('SELECT id_defensa FROM mg_defensas WHERE id_trabajo=:work AND estado="programada" FOR UPDATE');$pending->execute(['work'=>$workId]);if($pending->fetchColumn()){throw new RuntimeException('Ya hay una defensa pendiente; reprográmela desde ese registro.');}
+             $attempts=$pdo->prepare('SELECT COUNT(*) FROM mg_defensas WHERE id_trabajo=:work AND estado<>"cancelada"');$attempts->execute(['work'=>$workId]);$attemptCount=(int)$attempts->fetchColumn();
+             $maxDefenses = $rule['max_defensas'] !== null ? (int)$rule['max_defensas'] : (int)$configuration->effectiveValue('max_defensas',2);
+             if($maxDefenses>0&&$attemptCount>=$maxDefenses){throw new RuntimeException('Se alcanzó el máximo de defensas configurado.');}
+             $minimumDays = (int)$configuration->effectiveValue('dias_minimos_entre_defensas',0);
+             if($minimumDays>0){$last=$pdo->prepare('SELECT fecha_hora FROM mg_defensas WHERE id_trabajo=:work AND estado<>"cancelada" ORDER BY numero_defensa DESC LIMIT 1 FOR UPDATE');$last->execute(['work'=>$workId]);$lastDate=$last->fetchColumn();if($lastDate&&strtotime($dateTime)<strtotime($lastDate.' +'.$minimumDays.' days')){throw new RuntimeException("Deben transcurrir al menos {$minimumDays} días entre defensas.");}}
+             $tribunal=$this->currentTribunal($workId);if((int)$rule['requiere_tribunal']===1&&(!$tribunal||(int)$tribunal['presidentes']!==1)&&!$configuration->effectiveValue('permitir_defensa_requisitos_pendientes',false)){throw new RuntimeException('Asigne un tribunal válido antes de programar defensa.');}
+             $tribunalLeadDays=(int)$configuration->effectiveValue('dias_anticipacion_tribunal',0);
+             if((int)$rule['requiere_tribunal']===1&&$tribunal&&$tribunalLeadDays>0&&strtotime($dateTime)<strtotime($tribunal['designado_en'].' +'.$tribunalLeadDays.' days')){throw new RuntimeException("El tribunal debe designarse con al menos {$tribunalLeadDays} días de anticipación a la defensa.");}
             $num=(int)$pdo->query('SELECT COALESCE(MAX(numero_defensa),0)+1 FROM mg_defensas WHERE id_trabajo='.(int)$workId)->fetchColumn();
             $pdo->prepare('INSERT INTO mg_defensas (id_trabajo,numero_defensa,id_tribunal,fecha_hora,ubicacion,programada_por) VALUES (:work,:num,:tribunal,:when,:place,:admin)')->execute(['work'=>$workId,'num'=>$num,'tribunal'=>$tribunal?(int)$tribunal['id_tribunal']:null,'when'=>$this->sqlDateTime($dateTime),'place'=>$place!==''?$place:null,'admin'=>$adminId]);
             $id=(int)$pdo->lastInsertId();$this->defenseEvent($pdo,$id,'programada',null,$this->sqlDateTime($dateTime),null,'programada',null,null,$adminId,$note);
@@ -222,6 +249,8 @@ final class MgDefensas
             if($action==='reprogramar'){
                 $raw=trim((string)($input['fecha_hora']??''));$place=trim((string)($input['ubicacion']??''));$note=trim((string)($input['observaciones']??''));
                 if(!$this->validDateTime($raw)||strtotime($raw)<=time()||mb_strlen($place)>255||mb_strlen($note)>5000){throw new RuntimeException('Ingrese fecha/hora futura y observaciones válidas.');}
+                $minimumDays=(int)(new MgConfiguracion())->effectiveValue('dias_minimos_entre_defensas',0);
+                if($minimumDays>0){$previous=$pdo->prepare('SELECT MAX(fecha_hora) FROM mg_defensas WHERE id_trabajo=:work AND numero_defensa<:number AND estado<>"cancelada"');$previous->execute(['work'=>(int)$defense['id_trabajo'],'number'=>(int)$defense['numero_defensa']]);$previousDate=$previous->fetchColumn();if($previousDate&&strtotime($raw)<strtotime($previousDate.' +'.$minimumDays.' days')){throw new RuntimeException("Deben transcurrir al menos {$minimumDays} días entre defensas.");}}
                 $date=$this->sqlDateTime($raw);$pdo->prepare('UPDATE mg_defensas SET fecha_hora=:date,ubicacion=:place WHERE id_defensa=:id')->execute(['date'=>$date,'place'=>$place!==''?$place:null,'id'=>$defenseId]);
                 $this->defenseEvent($pdo,$defenseId,'reprogramada',$defense['fecha_hora'],$date,'programada','programada',null,null,$adminId,$note);
                 $this->auditRequests($pdo,(int)$defense['id_trabajo'],$adminId,'defensa_reprogramada','Defensa reprogramada · '.$date.($note!==''?' · '.$note:''));
@@ -251,13 +280,14 @@ final class MgDefensas
             if(!$work||$work['estado']!=='activo'){throw new RuntimeException('El trabajo no está activo.');}
             $exists=$pdo->prepare('SELECT id_cierre FROM mg_cierres WHERE id_trabajo=:work FOR UPDATE');$exists->execute(['work'=>$workId]);if($exists->fetchColumn()){throw new RuntimeException('El trabajo ya está cerrado.');}
             $this->requireReady($this->checklist($workId));
-            if((int)$work['requiere_defensa']===1){
-                $latest=$pdo->prepare('SELECT estado,resultado FROM mg_defensas WHERE id_trabajo=:work AND estado<>"cancelada" ORDER BY numero_defensa DESC LIMIT 1 FOR UPDATE');$latest->execute(['work'=>$workId]);$defense=$latest->fetch(PDO::FETCH_ASSOC);
-                $terminal=$defense&&$defense['estado']==='realizada'&&in_array($defense['resultado'],['aprobado','reprobado'],true);
-                $observedAtLimit=false;
-                if($defense&&$defense['estado']==='realizada'&&$defense['resultado']==='observado'&&$work['max_defensas']!==null){
-                    $attempts=$pdo->prepare('SELECT COUNT(*) FROM mg_defensas WHERE id_trabajo=:work AND estado<>"cancelada"');$attempts->execute(['work'=>$workId]);
-                    $observedAtLimit=(int)$attempts->fetchColumn()>=(int)$work['max_defensas'];
+             if((int)$work['requiere_defensa']===1){
+                 $maximum=$work['max_defensas']!==null?(int)$work['max_defensas']:(int)(new MgConfiguracion())->effectiveValue('max_defensas',2);
+                 $latest=$pdo->prepare('SELECT estado,resultado FROM mg_defensas WHERE id_trabajo=:work AND estado<>"cancelada" ORDER BY numero_defensa DESC LIMIT 1 FOR UPDATE');$latest->execute(['work'=>$workId]);$defense=$latest->fetch(PDO::FETCH_ASSOC);
+                 $terminal=$defense&&$defense['estado']==='realizada'&&in_array($defense['resultado'],['aprobado','reprobado'],true);
+                 $observedAtLimit=false;
+                 if($defense&&$defense['estado']==='realizada'&&$defense['resultado']==='observado'){
+                     $attempts=$pdo->prepare('SELECT COUNT(*) FROM mg_defensas WHERE id_trabajo=:work AND estado<>"cancelada"');$attempts->execute(['work'=>$workId]);
+                     $observedAtLimit=(int)$attempts->fetchColumn()>=$maximum;
                 }
                 if(!$terminal&&!$observedAtLimit){throw new RuntimeException('Falta un resultado terminal de defensa o todavía quedan intentos permitidos.');}
                 $expected=$observedAtLimit?'reprobado':$defense['resultado'];
@@ -312,7 +342,7 @@ final class MgDefensas
 
     private function currentTribunal(int $workId): ?array
     {
-        $q=Database::connection()->prepare('SELECT t.id_tribunal,COUNT(tm.id_miembro) miembros,COUNT(CASE WHEN tm.rol="presidente" THEN 1 END) presidentes FROM mg_tribunales t LEFT JOIN mg_tribunal_miembros tm ON tm.id_tribunal=t.id_tribunal WHERE t.id_trabajo=:work AND t.estado="activo" GROUP BY t.id_tribunal LIMIT 1');$q->execute(['work'=>$workId]);return $q->fetch(PDO::FETCH_ASSOC)?:null;
+        $q=Database::connection()->prepare('SELECT t.id_tribunal,t.designado_en,COUNT(tm.id_miembro) miembros,COUNT(CASE WHEN tm.rol="presidente" THEN 1 END) presidentes FROM mg_tribunales t LEFT JOIN mg_tribunal_miembros tm ON tm.id_tribunal=t.id_tribunal WHERE t.id_trabajo=:work AND t.estado="activo" GROUP BY t.id_tribunal,t.designado_en LIMIT 1');$q->execute(['work'=>$workId]);return $q->fetch(PDO::FETCH_ASSOC)?:null;
     }
 
     private function auditRequests(PDO $pdo,int $workId,int $actorId,string $action,string $comment): void

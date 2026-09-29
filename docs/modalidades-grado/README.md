@@ -7,7 +7,7 @@ Este documento registra la primera fase MG para mantenerla separada del flujo de
 | HU | Alcance de esta entrega | Estado |
 | --- | --- | --- |
 | HU-019 | Roles `coordinador_mg` / `auxiliar_mg`, permiso del módulo y permisos MG granulares | Implementada en `db/030_mg_base.sql` y `includes/permisos.php` |
-| HU-020 | Parámetros editables y evidencia `confirmado` / `pendiente` / `propuesta` | Implementada en `mg_parametros` |
+| HU-020 | Parámetros globales tipados, evidencia, validación e historial de cambios | Implementada en `mg_parametros` y `mg_parametros_historial` |
 | HU-021 | Catálogo de cinco modalidades y ciclo de vida de cohortes | Implementada en `mg_modalidades` y `mg_cohortes` |
 | HU-022 | Hitos configurables por cohorte y conteo dinámico de informes | Implementada en `mg_calendario` |
 
@@ -34,7 +34,7 @@ mg_cohortes
 mg_calendario
 ```
 
-La migración `db/030_mg_base.sql` es aditiva e idempotente; se aplica manualmente al `testdb` existente. Las reglas institucionales no confirmadas se almacenan como parámetros y no se aplican como validaciones bloqueantes.
+`db/030_mg_base.sql` crea la tabla genérica `mg_parametros`. La migración aditiva `db/043_mg_general_parameters.sql` la reutiliza y añade categoría, tipo booleano, valor predeterminado, límites, visibilidad y auditoría antes/después; también agrega historiales específicos para cambios de cohorte y calendario. No reemplaza las tablas operativas ni borra parámetros históricos. Las reglas con evidencia `pendiente` o `propuesta` no se aplican; los valores predeterminados institucionales indicados como confirmados sí.
 
 Para explorar la vista local con datos de ejemplo, `db/mg_demo_data.sql` agrega dos cohortes `[DEMO]` y sus calendarios. Es un seed repetible y no forma parte de la migración base.
 
@@ -71,9 +71,14 @@ Aplicar `db/035_mg_administrative_panel.sql` después de `db/034_mg_academic_imp
 Aplicar `db/036_mg_solicitudes.sql` después de `db/035_mg_administrative_panel.sql`.
 
 - `mg_modalidades` configura la descripción, intención de trabajo grupal (deshabilitada por defecto), máximo de integrantes, y si tema y descripción son requeridos.
+- El máximo global de integrantes por grupo es 3; un valor específico de modalidad lo sobrescribe. Los límites se validan también en backend al ofrecer y al incorporar estudiantes a un grupo.
 - El estudiante dispone de `/modalidades-grado/mi-solicitud.php`: puede crear/editar borrador, enviar, consultar historial, corregir solicitudes observadas, reenviar y cancelar borradores u observadas.
+- Aplicar `db/045_mg_solicitud_academic_evidence.sql` después de `db/044_mg_simplify_general_parameters.sql`. Si el historial oficial no está disponible o completo, el estudiante puede adjuntar a borrador/observada un PDF privado versionado de hasta 5 MB, aunque aún no tenga un plan digital asignado. La carga solo deja evidencia pendiente; no aprueba la solicitud ni copia notas al historial oficial.
+- Si ya existe plan asignado, Administración contrasta cada materia obligatoria con ese plan. Si aún no existe, Administración debe identificar la malla oficial de la carrera, registrar todas sus materias obligatorias y sus notas desde el PDF, y confirmar expresamente el cotejo antes de verificar el documento. Una versión de documento revisada sin plan digital solo es válida mientras el estudiante permanezca en la misma carrera y no cambie su asignación de plan; un cambio requiere nueva evidencia.
+- En `/modalidades-grado/solicitudes.php`, Administración contrasta cada materia obligatoria con el plan asignado o la malla oficial anotada manualmente si todavía no hay plan digital. Registra estado, nota y periodo. La verificación del documento y la aprobación de la solicitud son acciones distintas. Solo un documento revisado con todas las materias obligatorias aprobadas permite continuar; para Graduación por Excelencia además requiere promedio estrictamente mayor que 90.
+- La evidencia verificada queda asociada a la solicitud, conserva sus versiones y queda auditada. La habilitación e inscripción formal vuelven a comprobar la elegibilidad académica.
 - Solo se muestran modalidades activas y disponibles para su carrera. Toda acción verifica propiedad de la solicitud y estado de cuenta en backend.
-- Enviar exige plan asignado, historial aprobado y todas las materias obligatorias aprobadas. Se guarda una captura de verificación y se listan pendientes/sin registro. La revisión administrativa vuelve a comprobar plan, historial, modalidad y estado activo del estudiante antes de aprobar y habilitar.
+- Enviar exige por defecto un plan asignado e historial oficial completo con todas las materias obligatorias aprobadas; si los datos oficiales aún no están disponibles, permite enviar con PDF adjunto y espera su verificación administrativa. Se guarda la captura de verificación cuando existe. La revisión y la habilitación vuelven a comprobar la elegibilidad; la aprobación administrativa continúa siendo manual y obligatoria.
 - Administración revisa en `/modalidades-grado/solicitudes.php`: iniciar revisión, observar, aprobar o rechazar. Observación/rechazo requieren comentario y todas las transiciones se registran en `mg_solicitud_historial`.
 - La habilitación se registra separadamente en `mg_habilitaciones`; la inscripción formal se crea después desde Administración.
 
@@ -83,8 +88,8 @@ Aplicar `db/037_mg_inscripciones_trabajos.sql` después de `db/036_mg_solicitude
 
 - Administración solo puede formalizar una solicitud aprobada, habilitada, con cuenta de estudiante activa y elegibilidad académica vigente. La operación es transaccional y no duplica inscripciones activas.
 - Cada inscripción se asocia a una cohorte activa. No hay límite de estudiantes por cohorte.
-- Se crea un trabajo individual, un nuevo trabajo grupal o se incorpora al estudiante a un grupo activo compatible. La compatibilidad comprueba modalidad, cohorte, carrera y tema; backend vuelve a comprobar capacidad según `max_integrantes`.
-- Los códigos se generan desde la modalidad, año de inicio de cohorte e ID del trabajo (por ejemplo `PG-2027-00001`). Cada trabajo empieza con un integrante y las incorporaciones quedan ligadas a una inscripción formal.
+- Se crea un trabajo individual, un nuevo trabajo grupal o se incorpora al estudiante a un grupo activo compatible. La compatibilidad comprueba modalidad, cohorte, carrera y tema; backend vuelve a comprobar capacidad según el máximo de modalidad o el global de 3.
+- Los códigos de trabajo se generan en backend desde modalidad, año de inicio e identificador único (por ejemplo `PG-2027-001`). Las cohortes también pueden generar códigos correlativos `MG-AAAA-NN`; los códigos previos se conservan.
 - El estudiante consulta su inscripción, cohorte, trabajo y cantidad de integrantes desde Mi Modalidad de Grado.
 
 ### Asignación de tutor (HU-026)
@@ -93,7 +98,7 @@ Aplicar `db/038_mg_tutor_assignments.sql` después de `db/037_mg_inscripciones_t
 
 - Se reutiliza `tutores`; `mg_asignaciones_tutor` relaciona el tutor existente con un trabajo MG y conserva cada cambio como una asignación finalizada más una nueva asignación activa.
 - La carga es la cantidad de estudiantes con inscripción e integrante activos bajo trabajos actualmente asignados al tutor, no el número de grupos.
-- `tutor_max_estudiantes` solo bloquea cuando tiene valor positivo y `estado_evidencia = confirmado`. Si está pendiente/propuesto, la vista muestra cargas pero no impone un límite.
+- El límite global confirmado de tutor es 3 estudiantes activos, también validado al asignar o cambiar tutor. El sistema excluye del cálculo al estudiante que ya pertenece al trabajo reasignado para no contarle doble. Cambiar tutor exige motivo y la asignación anterior se conserva en el historial.
 - Administración asigna/cambia en `/modalidades-grado/asignaciones-tutor.php`; el tutor consulta sus trabajos en `/modalidades-grado/mis-trabajos.php`.
 
 ### Calendarios, plantillas y obligaciones (HU-027)
@@ -111,23 +116,36 @@ Aplicar `db/039_mg_calendario_modalidad_plantillas.sql` después de `db/038_mg_t
 Aplicar `db/040_mg_seguimiento.sql` después de `db/039_mg_calendario_modalidad_plantillas.sql`.
 
 - Administración y tutor asignado usan `/modalidades-grado/seguimiento.php`; el tutor solo accede a trabajos con asignación activa.
-- Para hitos `informe`, el estudiante puede subir un PDF privado de hasta 5 MB. Las correcciones crean versiones nuevas; tutor asignado o Administración puede iniciar revisión, observar con comentario obligatorio o aprobar la versión vigente. La descarga comprueba la relación del usuario con el trabajo.
-- Para otros hitos, el estudiante puede registrar un comentario y avance opcional. El vencimiento se calcula desde la fecha límite, no requiere cron.
+- Para hitos `informe`, el estudiante puede subir un PDF privado con el máximo de tamaño configurable (inicial 5 MB). Las correcciones crean versiones nuevas; tutor asignado o Administración puede iniciar revisión, observar con comentario obligatorio o aprobar la versión vigente. Correcciones máximas y entregas fuera de plazo se configuran y validan al confirmarse.
+- Para otros hitos, el estudiante puede registrar un comentario y avance opcional. El vencimiento se calcula desde la fecha límite, no requiere cron; se auditan los cambios y el indicador de vencido no sobrescribe el estado operativo.
 - Sesiones de tutoría/taller/seguimiento se registran dentro de MG, separadas del módulo de Tutorías tradicional, y crean asistencia para los integrantes activos. Administración o el tutor asignado registra presentes, ausentes o justificados.
-- El porcentaje de presencia se calcula sobre sesiones marcadas presente/ausente; las asistencias justificadas se muestran aparte y no entran en ese denominador. El porcentaje no bloquea el proceso en esta fase; el checklist de defensa lo compara con el mínimo si la modalidad requiere asistencia y este está configurado. MDG I y MDG II guardan estado, nota y observaciones propias, con historial, sin usar el módulo general de Evaluaciones.
+- El porcentaje de presencia se calcula sobre sesiones marcadas presente/ausente; las asistencias justificadas se muestran aparte y no entran en ese denominador. El mínimo global es 80 % si la modalidad requiere asistencia y no define otro. MDG I y MDG II tienen historial propio; por defecto MDG I debe estar aprobado antes de registrar MDG II. No se usa el módulo general de Evaluaciones.
 
 ### Checklist, tribunal, defensas y cierre (HU-029)
 
 Aplicar `db/041_mg_defensas_cierre.sql` después de `db/040_mg_seguimiento.sql`.
 
-- Las modalidades configuran si requieren MDG I/II, informe final, tribunal y defensa; máximo de defensas, avance mínimo, composición mínima del tribunal y si el tutor puede ser miembro. Los campos sugeridos permanecen nulos/no bloqueantes hasta ser configurados.
+- Las modalidades configuran si requieren MDG I/II, informe final, tribunal y defensa; máximo de defensas, avance mínimo, composición mínima del tribunal y si el tutor puede ser miembro. Si un umbral numérico de modalidad está vacío, se usa el valor general confirmado (3 integrantes de tribunal, avance 100 %, máximo 2 defensas).
 - Administración gestiona en `/modalidades-grado/defensas.php`. El checklist comprueba solo requisitos activos de modalidad: inscripción/cohorte, tutor requerido, etapas, informes, asistencia/avance configurados y tribunal si aplica.
 - Los miembros se vinculan a usuarios existentes con perfil de tutor o roles de Coordinación/Auxiliar; no se crea una tabla de personas. Por configuración, puede impedirse que el tutor del trabajo forme parte de su tribunal.
-- Cada defensa es un intento independiente. Reprogramar conserva su historial; cancelar no consume el límite configurado. Los resultados de defensa y el cierre final quedan auditados.
+- Cada defensa es un intento independiente. Reprogramar conserva su historial; cancelar no consume el límite configurado. Se pueden configurar días mínimos entre intentos y anticipación para designar tribunal. No se permite programar con requisitos pendientes por defecto. Los resultados de defensa y el cierre final quedan auditados.
 - El cierre es una decisión administrativa posterior al checklist y, si la modalidad exige defensa, al resultado terminal de su último intento. Cerrar finaliza trabajo, inscripciones, integrantes y asignación activa de tutor conservando sus registros.
 - Mi Modalidad de Grado permite consultar tribunal, intentos, resultado y cierre. El promedio no genera graduación automática.
 
-En HU-029, la asistencia deja de ser solo informativa para la habilitación de defensa cuando la modalidad la requiere y tiene un porcentaje mínimo configurado; no bloquea la solicitud inicial.
+La asistencia requerida y el avance se evalúan durante el checklist de defensa cuando la modalidad los configura. No bloquean la solicitud inicial. El cierre final permanece como una acción manual de Administración aunque la defensa esté aprobada.
+
+### Parámetros generales y auditoría (HU-020 ampliada)
+
+Aplicar `db/043_mg_general_parameters.sql` después de las migraciones MG hasta `db/042_*.sql`.
+
+- Reutiliza `mg_parametros`: categorías, tipo booleano, valor predeterminado, rangos, visibilidad y valores fijos de solo lectura. Las claves específicas de Examen/Excelencia se conservan como históricas y sus campos migran a `mg_modalidades`.
+- Los límites globales confirmados son 3 estudiantes por tutor y 3 integrantes predeterminados por grupo. Un máximo explícito de modalidad prevalece; un campo numérico nulo hereda el valor global.
+- Elegibilidad académica exige por defecto plan completo y cero materias pendientes. Las decisiones de aprobación y habilitación continúan siendo acciones administrativas separadas.
+- Avance general para defensa: 100 %; asistencia general: 80 %; MDG I aprobado antes de MDG II: sí; tribunal predeterminado: 3 miembros; máximo general de defensas: 2. Las reglas de modalidad pueden proporcionar requisitos más específicos.
+- Las filas `propuesta` o `pendiente` se conservan pero no activan restricciones nuevas. Después de `db/044_mg_simplify_general_parameters.sql`, solo se editan los seis límites generales de capacidad, asistencia, avance, tribunal y defensas; el resto permanece para consulta histórica y el backend utiliza la política fija del proceso.
+- Las ediciones de parámetros dejan valor anterior/nuevo, evidencia, fuente, actor y fecha en `mg_parametros_historial`. Cambios de cohortes e hitos se guardan en sus historiales; asignaciones, tribunales, informes, defensas y cierres usan los historiales existentes.
+- Códigos automáticos de cohorte usan `MG`, año y secuencia protegida con bloqueo MySQL; códigos de trabajo usan modalidad, año e ID único. Los formatos ya no se exponen como parámetros y los códigos históricos no se reescriben.
+- No hay todavía flujo de carga/verificación de documentos ni un proceso automático de alertas por reuniones; sus antiguos parámetros propuestos permanecen explícitamente como no operativos.
 
 ## Navegación simplificada
 

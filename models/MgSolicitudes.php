@@ -9,7 +9,7 @@ final class MgSolicitudes
     public function modalitiesForStudent(int $studentId): array
     {
         $statement = Database::connection()->prepare(
-            'SELECT m.id_modalidad, m.codigo, m.nombre, m.descripcion, m.requiere_tutor,
+            'SELECT m.id_modalidad, m.codigo, m.nombre, m.descripcion, m.requiere_tutor, m.min_interesados, m.promedio_minimo,
                     m.permite_trabajo_grupal, m.max_integrantes, m.requiere_tema_preliminar, m.requiere_descripcion
              FROM estudiantes e
              INNER JOIN mg_carrera_modalidades cm ON cm.id_carrera = e.id_carrera AND cm.disponible = 1
@@ -23,7 +23,7 @@ final class MgSolicitudes
     public function studentRequests(int $studentId): array
     {
         $statement = Database::connection()->prepare(
-            'SELECT s.*, m.codigo AS codigo_modalidad, m.nombre AS modalidad,
+            'SELECT s.*, m.codigo AS codigo_modalidad, m.nombre AS modalidad,m.promedio_minimo,
                     h.habilitado_en, h.observacion AS observacion_habilitacion,
                     i.id_inscripcion, i.estado AS estado_inscripcion, i.inscrito_en,
                     c.codigo AS codigo_cohorte, c.nombre AS cohorte,
@@ -43,13 +43,18 @@ final class MgSolicitudes
              ORDER BY s.creado_en DESC, s.id_solicitud DESC'
         );
         $statement->execute(['estudiante' => $studentId]);
-        return $statement->fetchAll(PDO::FETCH_ASSOC);
+        $requests = $statement->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($requests as &$request) {
+            $request['evidencia_academica'] = $this->latestAcademicEvidence((int)$request['id_solicitud']);
+        }
+        unset($request);
+        return $requests;
     }
 
     public function requestForStudent(int $requestId, int $studentId): ?array
     {
         $statement = Database::connection()->prepare(
-            'SELECT s.*, m.codigo AS codigo_modalidad, m.nombre AS modalidad,
+            'SELECT s.*, m.codigo AS codigo_modalidad, m.nombre AS modalidad,m.promedio_minimo,
                     m.requiere_tema_preliminar, m.requiere_descripcion, m.permite_trabajo_grupal,
                     m.max_integrantes, h.habilitado_en, h.observacion AS observacion_habilitacion,
                     i.id_inscripcion, i.estado AS estado_inscripcion, i.inscrito_en,
@@ -74,7 +79,80 @@ final class MgSolicitudes
             return null;
         }
         $request['historial'] = $this->history($requestId, true);
+        $request['evidencia_academica'] = $this->latestAcademicEvidence($requestId);
         return $request;
+    }
+
+    public function latestAcademicEvidence(int $requestId): ?array
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT ev.id_evidencia,ev.id_solicitud,ev.id_plan_estudio,ev.id_carrera,ev.plan_referencia,ev.numero_version,
+                    ev.nombre_archivo,ev.tamano_bytes,ev.comentario_estudiante,ev.estado,
+                    ev.materias_requeridas,ev.materias_aprobadas,ev.promedio_verificado,
+                    ev.observacion_revision,ev.subido_en,ev.revisado_en,
+                    p.codigo_plan,p.version_plan,c.nombre_carrera,
+                    CONCAT(su.nombre," ",su.apellido) AS subido_por,
+                    CONCAT(ru.nombre," ",ru.apellido) AS revisado_por
+             FROM mg_solicitud_evidencias ev
+             LEFT JOIN mg_planes_estudio p ON p.id_plan_estudio=ev.id_plan_estudio
+             INNER JOIN carreras c ON c.id_carrera=COALESCE(ev.id_carrera,p.id_carrera)
+             INNER JOIN usuarios su ON su.id_usuario=ev.subido_por
+             LEFT JOIN usuarios ru ON ru.id_usuario=ev.revisado_por
+             WHERE ev.id_solicitud=:solicitud ORDER BY ev.numero_version DESC LIMIT 1'
+        );
+        $statement->execute(['solicitud' => $requestId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+        $row['materias'] = $this->evidenceSubjects((int)$row['id_evidencia']);
+        return $row;
+    }
+
+    public function academicEvidenceDownload(int $evidenceId, ?int $studentId = null): array
+    {
+        $sql = 'SELECT ev.nombre_archivo,ev.ruta_archivo,s.id_estudiante
+                FROM mg_solicitud_evidencias ev
+                INNER JOIN mg_solicitudes s ON s.id_solicitud=ev.id_solicitud
+                WHERE ev.id_evidencia=:id';
+        $params = ['id' => $evidenceId];
+        if ($studentId !== null) {
+            $sql .= ' AND s.id_estudiante=:estudiante';
+            $params['estudiante'] = $studentId;
+        }
+        $statement = Database::connection()->prepare($sql . ' LIMIT 1');
+        $statement->execute($params);
+        $file = $statement->fetch(PDO::FETCH_ASSOC);
+        if (!$file) {
+            throw new RuntimeException('No se encontró la evidencia académica solicitada.');
+        }
+        $relative = (string)$file['ruta_archivo'];
+        $prefix = 'storage/mg-academic-evidence/';
+        if (!str_starts_with($relative, $prefix) || basename($relative) !== substr($relative, strlen($prefix))) {
+            throw new RuntimeException('La ruta de la evidencia no es válida.');
+        }
+        $path = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+        if (!is_file($path) || !is_readable($path)) {
+            throw new RuntimeException('El archivo de evidencia ya no está disponible.');
+        }
+        return ['path' => $path, 'name' => basename((string)$file['nombre_archivo']), 'size' => filesize($path)];
+    }
+
+    private function evidenceSubjects(int $evidenceId): array
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT em.id_materia,m.nombre_materia,em.estado,em.nota,em.periodo
+             FROM mg_solicitud_evidencia_materias em
+             INNER JOIN materias m ON m.id_materia=em.id_materia
+             WHERE em.id_evidencia=:evidencia
+             UNION ALL
+             SELECT NULL AS id_materia,ml.nombre_materia,ml.estado,ml.nota,ml.periodo
+             FROM mg_solicitud_evidencia_materias_libres ml
+             WHERE ml.id_evidencia=:evidencia_libre
+             ORDER BY nombre_materia'
+        );
+        $statement->execute(['evidencia' => $evidenceId, 'evidencia_libre' => $evidenceId]);
+        return $statement->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function saveDraft(int $studentId, int $actorId, array $input): int
@@ -97,6 +175,7 @@ final class MgSolicitudes
         }
 
         $pdo = Database::connection();
+        $configuration = new MgConfiguracion();
         $pdo->beginTransaction();
         try {
             $student = $this->lockStudent($pdo, $studentId, $actorId);
@@ -135,20 +214,61 @@ final class MgSolicitudes
                 $this->event($pdo, $requestId, 'creada', null, 'borrador', $actorId, null, null);
             } else {
                 $current = $this->lockOwnedRequest($pdo, $requestId, $studentId);
-                if (!in_array($current['estado'], ['borrador', 'observada'], true)) {
+                $editableStates = ['borrador'];
+                if ($configuration->effectiveValue('permitir_corregir_solicitud_observada', true)) {
+                    $editableStates[] = 'observada';
+                }
+                if ($configuration->effectiveValue('permitir_editar_solicitud_enviada', false)) {
+                    $editableStates = array_merge($editableStates, ['enviada', 'en_revision']);
+                }
+                if (!in_array($current['estado'], $editableStates, true)) {
                     throw new RuntimeException('Solo se puede editar un borrador o una solicitud observada.');
+                }
+                $submittedEdit = in_array($current['estado'], ['enviada', 'en_revision'], true);
+                $summary = $submittedEdit ? $this->academicSummaryOrNull($studentId) : null;
+                if ($submittedEdit) {
+                    $this->requireAllRequiredSubjectsPassed($summary);
                 }
                 $update = $pdo->prepare(
                     'UPDATE mg_solicitudes SET id_modalidad = :modalidad, tipo_trabajo = :tipo,
-                        tema_preliminar = :tema, descripcion = :descripcion, observaciones_estudiante = :observaciones
+                        tema_preliminar = :tema, descripcion = :descripcion, observaciones_estudiante = :observaciones,
+                        estado = :estado, enviado_en = CASE WHEN :reenviada = 1 THEN CURRENT_TIMESTAMP ELSE enviado_en END,
+                        revisado_por = CASE WHEN :reinicia_revision_usuario = 1 THEN NULL ELSE revisado_por END,
+                        revisado_en = CASE WHEN :reinicia_revision_fecha = 1 THEN NULL ELSE revisado_en END,
+                        id_plan_verificado = CASE WHEN :actualiza_resumen_plan = 1 THEN :plan ELSE id_plan_verificado END,
+                        materias_requeridas_snapshot = CASE WHEN :actualiza_resumen_requeridas = 1 THEN :requeridas ELSE materias_requeridas_snapshot END,
+                        materias_aprobadas_snapshot = CASE WHEN :actualiza_resumen_aprobadas = 1 THEN :aprobadas ELSE materias_aprobadas_snapshot END,
+                        promedio_snapshot = CASE WHEN :actualiza_resumen_promedio = 1 THEN :promedio ELSE promedio_snapshot END,
+                        verificado_en = CASE WHEN :actualiza_resumen_fecha = 1 THEN CURRENT_TIMESTAMP ELSE verificado_en END
                      WHERE id_solicitud = :id'
                 );
+                $newState = $submittedEdit ? 'enviada' : $current['estado'];
                 $update->execute([
                     'modalidad' => $modalityId, 'tipo' => $workType,
                     'tema' => $topic !== '' ? $topic : null, 'descripcion' => $description !== '' ? $description : null,
-                    'observaciones' => $studentNotes !== '' ? $studentNotes : null, 'id' => $requestId,
+                    'observaciones' => $studentNotes !== '' ? $studentNotes : null, 'estado' => $newState,
+                    'reenviada' => $submittedEdit ? 1 : 0,
+                    'reinicia_revision_usuario' => $submittedEdit ? 1 : 0,
+                    'reinicia_revision_fecha' => $submittedEdit ? 1 : 0,
+                    'actualiza_resumen_plan' => $submittedEdit ? 1 : 0,
+                    'actualiza_resumen_requeridas' => $submittedEdit ? 1 : 0,
+                    'actualiza_resumen_aprobadas' => $submittedEdit ? 1 : 0,
+                    'actualiza_resumen_promedio' => $submittedEdit ? 1 : 0,
+                    'actualiza_resumen_fecha' => $submittedEdit ? 1 : 0,
+                    'plan' => $summary['id_plan_estudio'] ?? null, 'requeridas' => $summary['materias_requeridas'] ?? null,
+                    'aprobadas' => $summary['materias_aprobadas'] ?? null, 'promedio' => $summary['promedio_aprobadas'] ?? null,
+                    'id' => $requestId,
                 ]);
-                $this->event($pdo, $requestId, $current['estado'] === 'observada' ? 'corregida' : 'borrador_actualizado', $current['estado'], $current['estado'], $actorId, null, null);
+                $action = $submittedEdit ? 'actualizada_por_estudiante' : ($current['estado'] === 'observada' ? 'corregida' : 'borrador_actualizado');
+                $this->event($pdo, $requestId, $action, $current['estado'], $newState, $actorId, null, $summary);
+                if ($submittedEdit) {
+                    (new Notificacion())->notifyAdministrators(
+                        $pdo, 'mg_solicitud_actualizada', 'Solicitud de Modalidad de Grado actualizada',
+                        'El estudiante actualizó la solicitud #' . $requestId . '; vuelve a estar pendiente de revisión.',
+                        'modalidades-grado/solicitudes.php?id=' . $requestId,
+                        'mg-request:' . $requestId . ':student-edit:' . date('YmdHis')
+                    );
+                }
             }
             $pdo->commit();
             return $requestId;
@@ -158,6 +278,270 @@ final class MgSolicitudes
             }
             if ($exception instanceof PDOException && (string) $exception->getCode() === '23000') {
                 throw new RuntimeException('Ya existe una solicitud activa para este estudiante.');
+            }
+            throw $exception;
+        }
+    }
+
+    public function uploadAcademicEvidence(int $requestId, int $studentId, int $actorId, array $file, string $comment): int
+    {
+        $comment = trim($comment);
+        if (mb_strlen($comment) > 2000) {
+            throw new RuntimeException('El comentario del archivo no puede superar 2.000 caracteres.');
+        }
+        $temporaryPath = (string)($file['tmp_name'] ?? '');
+        $originalName = basename((string)($file['name'] ?? 'calificaciones.pdf'));
+        $size = (int)($file['size'] ?? 0);
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($temporaryPath)
+            || strtolower(pathinfo($originalName, PATHINFO_EXTENSION)) !== 'pdf'
+            || $size < 1 || $size > 5_000_000
+            || (new finfo(FILEINFO_MIME_TYPE))->file($temporaryPath) !== 'application/pdf') {
+            throw new RuntimeException('Adjunte un PDF válido de calificaciones que no supere 5 MB.');
+        }
+        $handle = fopen($temporaryPath, 'rb');
+        $signature = $handle ? fread($handle, 5) : false;
+        if ($handle) {
+            fclose($handle);
+        }
+        if ($signature !== '%PDF-') {
+            throw new RuntimeException('El archivo no tiene una firma PDF válida.');
+        }
+        $hash = hash_file('sha256', $temporaryPath);
+        if ($hash === false) {
+            throw new RuntimeException('No se pudo verificar el archivo recibido.');
+        }
+        $plan = (new MgAcademico())->assignedPlan($studentId);
+        $student = (new Estudiante())->findById($studentId);
+        if (!$student) {
+            throw new RuntimeException('El perfil de estudiante no está disponible.');
+        }
+
+        $relativePath = 'storage/mg-academic-evidence/' . $hash . '-' . bin2hex(random_bytes(5)) . '.pdf';
+        $absolutePath = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+        $directory = dirname($absolutePath);
+        if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) {
+            throw new RuntimeException('No se pudo preparar el almacenamiento privado de evidencias.');
+        }
+
+        $pdo = Database::connection();
+        $stored = false;
+        $pdo->beginTransaction();
+        try {
+            $this->lockStudent($pdo, $studentId, $actorId);
+            $request = $this->lockOwnedRequest($pdo, $requestId, $studentId);
+            if (!in_array($request['estado'], ['borrador', 'observada'], true)) {
+                throw new RuntimeException('Solo se puede adjuntar evidencia a un borrador o solicitud observada.');
+            }
+            $planLock = $pdo->prepare('SELECT id_plan_estudio FROM mg_estudiante_plan WHERE id_estudiante=:id FOR UPDATE');
+            $planLock->execute(['id' => $studentId]);
+            $currentPlanId = $planLock->fetchColumn();
+            if (($currentPlanId === false ? null : (int)$currentPlanId) !== ($plan === null ? null : (int)$plan['id_plan_estudio'])) {
+                throw new RuntimeException('El plan del estudiante cambió; recargue y vuelva a adjuntar el documento.');
+            }
+            $versionQuery = $pdo->prepare('SELECT COALESCE(MAX(numero_version),0) FROM mg_solicitud_evidencias WHERE id_solicitud=:id FOR UPDATE');
+            $versionQuery->execute(['id' => $requestId]);
+            $version = (int)$versionQuery->fetchColumn() + 1;
+            if (!move_uploaded_file($temporaryPath, $absolutePath)) {
+                throw new RuntimeException('No se pudo guardar el archivo de calificaciones.');
+            }
+            $stored = true;
+            $insert = $pdo->prepare(
+                'INSERT INTO mg_solicitud_evidencias
+                    (id_solicitud,id_plan_estudio,id_carrera,numero_version,nombre_archivo,ruta_archivo,hash_archivo,tamano_bytes,comentario_estudiante,subido_por)
+                 VALUES (:solicitud,:plan,:carrera,:version,:nombre,:ruta,:hash,:bytes,:comentario,:actor)'
+            );
+            $insert->execute([
+                'solicitud' => $requestId, 'plan' => $plan ? (int)$plan['id_plan_estudio'] : null,
+                'carrera' => (int)$student['id_carrera'], 'version' => $version,
+                'nombre' => mb_substr($originalName, 0, 255), 'ruta' => $relativePath, 'hash' => $hash,
+                'bytes' => $size, 'comentario' => $comment !== '' ? $comment : null, 'actor' => $actorId,
+            ]);
+            $evidenceId = (int)$pdo->lastInsertId();
+            $pdo->prepare(
+                'UPDATE mg_solicitudes SET fuente_verificacion_academica=NULL,id_evidencia_verificada=NULL,
+                    id_plan_verificado=NULL,materias_requeridas_snapshot=NULL,materias_aprobadas_snapshot=NULL,
+                    promedio_snapshot=NULL,verificado_en=NULL WHERE id_solicitud=:id'
+            )->execute(['id' => $requestId]);
+            $this->event($pdo, $requestId, 'evidencia_academica_subida', $request['estado'], $request['estado'], $actorId,
+                'Versión ' . $version . ' del documento de calificaciones adjuntada.', [
+                    'fuente' => 'documento_pendiente', 'evidencia_id' => $evidenceId,
+                    'version' => $version, 'plan' => $plan ? (int)$plan['id_plan_estudio'] : null,
+                ]);
+            $pdo->commit();
+            return $evidenceId;
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if ($stored && is_file($absolutePath)) {
+                @unlink($absolutePath);
+            }
+            throw $exception;
+        }
+    }
+
+    public function reviewAcademicEvidence(int $requestId, int $adminId, string $action, array $input): void
+    {
+        if (!in_array($action, ['verificar_evidencia', 'observar_evidencia'], true)) {
+            throw new RuntimeException('Seleccione una acción de revisión de evidencia válida.');
+        }
+        $note = trim((string)($input['observacion_revision'] ?? ''));
+        if (($action === 'observar_evidencia' && $note === '') || mb_strlen($note) > 5000) {
+            throw new RuntimeException('Indique qué debe corregirse en el documento (máximo 5.000 caracteres).');
+        }
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $request = $this->lockAdminRequest($pdo, $requestId);
+            $this->assertState($request, ['en_revision']);
+            $evidenceQuery = $pdo->prepare(
+                'SELECT * FROM mg_solicitud_evidencias
+                 WHERE id_solicitud=:solicitud ORDER BY numero_version DESC LIMIT 1 FOR UPDATE'
+            );
+            $evidenceQuery->execute(['solicitud' => $requestId]);
+            $evidence = $evidenceQuery->fetch(PDO::FETCH_ASSOC);
+            if (!$evidence || $evidence['estado'] !== 'pendiente') {
+                throw new RuntimeException('No hay una versión pendiente de evidencia para revisar.');
+            }
+            if ((int)($input['id_evidencia'] ?? 0) !== (int)$evidence['id_evidencia']) {
+                throw new RuntimeException('El documento cambió antes de la revisión. Recargue el expediente.');
+            }
+            if ($action === 'observar_evidencia') {
+                $pdo->prepare('UPDATE mg_solicitud_evidencias SET estado="observada",observacion_revision=:note,revisado_por=:actor,revisado_en=CURRENT_TIMESTAMP WHERE id_evidencia=:id')
+                    ->execute(['note' => $note, 'actor' => $adminId, 'id' => (int)$evidence['id_evidencia']]);
+                $this->transition($pdo, $request, 'observada', 'evidencia_academica_observada', $adminId, $note, [
+                    'evidencia_id' => (int)$evidence['id_evidencia'], 'version' => (int)$evidence['numero_version'],
+                ]);
+                (new Notificacion())->add(
+                    $pdo, (int)$request['id_usuario_estudiante'], 'mg_evidencia_observada', 'Calificaciones observadas',
+                    $note, 'modalidades-grado/mi-solicitud.php?id=' . $requestId,
+                    'mg-grade-evidence:' . $evidence['id_evidencia'] . ':observed'
+                );
+                $pdo->commit();
+                return;
+            }
+
+            $storedFile = $this->academicEvidenceDownload((int)$evidence['id_evidencia']);
+            $storedHash = hash_file('sha256', $storedFile['path']);
+            if ($storedHash === false || !hash_equals((string)$evidence['hash_archivo'], $storedHash)) {
+                throw new RuntimeException('El archivo guardado no coincide con la evidencia cargada; no puede verificarse.');
+            }
+
+            $plan = (new MgAcademico())->assignedPlan((int)$request['id_estudiante']);
+            $student = (new Estudiante())->findById((int)$request['id_estudiante']);
+            if (!$student || (int)$student['id_carrera'] !== (int)$evidence['id_carrera']
+                || ($plan ? (int)$plan['id_plan_estudio'] !== (int)$evidence['id_plan_estudio'] : $evidence['id_plan_estudio'] !== null)) {
+                throw new RuntimeException('La carrera o el plan cambió; observe el documento y solicite una nueva versión.');
+            }
+            $planReference = null;
+            if ($plan) {
+                $subjects = (new MgAcademico())->requiredSubjectsForPlan((int)$plan['id_plan_estudio']);
+                if (!$subjects) {
+                    throw new RuntimeException('El plan no tiene materias obligatorias para verificar.');
+                }
+                $submitted = is_array($input['materias'] ?? null) ? $input['materias'] : [];
+                $expectedIds = array_map(static fn(array $subject): string => (string)$subject['id_materia'], $subjects);
+                $submittedIds = array_map('strval', array_keys($submitted));
+                sort($expectedIds, SORT_STRING);
+                sort($submittedIds, SORT_STRING);
+                if ($expectedIds !== $submittedIds) {
+                    throw new RuntimeException('Verifique cada materia obligatoria del plan; no se aceptan filas incompletas o ajenas al plan.');
+                }
+            } else {
+                $planReference = trim((string)($input['plan_referencia'] ?? ''));
+                if ($planReference === '' || mb_strlen($planReference) > 100
+                    || (string)($input['confirma_materias_plan'] ?? '') !== '1') {
+                    throw new RuntimeException('Indique el plan o malla comprobado y confirme que el PDF incluye todas sus materias obligatorias.');
+                }
+                $lines = preg_split('/\R/u', trim((string)($input['materias_sin_plan'] ?? '')));
+                $lines = array_values(array_filter(array_map('trim', $lines ?: []), static fn(string $line): bool => $line !== ''));
+                if (!$lines || count($lines) > 200) {
+                    throw new RuntimeException('Liste entre 1 y 200 materias verificadas del plan o malla.');
+                }
+                $subjects = [];
+                $submitted = [];
+                $seen = [];
+                foreach ($lines as $index => $line) {
+                    $columns = str_getcsv($line, ';', '"', '');
+                    if (count($columns) !== 4) {
+                        throw new RuntimeException('Fila ' . ($index + 1) . ': use Materia;Estado;Nota;Periodo.');
+                    }
+                    [$name, $status, $score, $period] = array_map('trim', $columns);
+                    $key = mb_strtolower($name);
+                    if ($name === '' || mb_strlen($name) > 150 || isset($seen[$key])) {
+                        throw new RuntimeException('Fila ' . ($index + 1) . ': nombre de materia vacío, repetido o demasiado largo.');
+                    }
+                    $seen[$key] = true;
+                    $subjects[] = ['id_materia' => null, 'nombre_materia' => $name];
+                    $submitted[$index] = ['estado' => $status, 'nota' => $score, 'periodo' => $period];
+                }
+            }
+            $approved = 0;
+            $gradeTotal = 0.0;
+            $save = $pdo->prepare(
+                'INSERT INTO mg_solicitud_evidencia_materias (id_evidencia,id_materia,estado,nota,periodo)
+                 VALUES (:evidencia,:materia,:estado,:nota,:periodo)'
+            );
+            $saveManual = $pdo->prepare(
+                'INSERT INTO mg_solicitud_evidencia_materias_libres (id_evidencia,nombre_materia,estado,nota,periodo)
+                 VALUES (:evidencia,:materia,:estado,:nota,:periodo)'
+            );
+            foreach ($subjects as $index => $subject) {
+                $id = $subject['id_materia'] !== null ? (int)$subject['id_materia'] : null;
+                $grade = $id !== null ? ($submitted[$id] ?? []) : ($submitted[$index] ?? []);
+                $status = strtoupper(trim((string)($grade['estado'] ?? '')));
+                $score = trim((string)($grade['nota'] ?? ''));
+                $period = trim((string)($grade['periodo'] ?? ''));
+                if (!in_array($status, ['APROBADA','REPROBADA'], true)
+                    || !is_numeric($score) || (float)$score < 0 || (float)$score > 100
+                    || mb_strlen($period) > 40) {
+                    throw new RuntimeException('Complete estado, nota (0–100) y periodo válido para ' . $subject['nombre_materia'] . '.');
+                }
+                if ($status === 'APROBADA') {
+                    $approved++;
+                }
+                $gradeTotal += (float)$score;
+                ($id !== null ? $save : $saveManual)->execute([
+                    'evidencia' => (int)$evidence['id_evidencia'], 'materia' => $id ?? $subject['nombre_materia'], 'estado' => $status,
+                    'nota' => number_format((float)$score, 2, '.', ''), 'periodo' => $period !== '' ? $period : null,
+                ]);
+            }
+            if ($approved !== count($subjects)) {
+                throw new RuntimeException('La evidencia contiene materias sin aprobar. Obsérvela y solicite una corrección; no puede marcarse como verificada.');
+            }
+            $average = number_format($gradeTotal / count($subjects), 2, '.', '');
+            if ($request['codigo_modalidad'] === 'GRADUACION_EXCELENCIA'
+                && ((float)$average <= 90.0 || ($request['promedio_minimo'] !== null && (float)$average < (float)$request['promedio_minimo']))) {
+                throw new RuntimeException('El promedio verificado no cumple Graduación por Excelencia: debe superar 90 puntos y el mínimo propio de la modalidad.');
+            }
+            $pdo->prepare(
+                'UPDATE mg_solicitud_evidencias SET estado="verificada",materias_requeridas=:total,
+                    materias_aprobadas=:aprobadas,promedio_verificado=:promedio,
+                    plan_referencia=:plan_referencia,
+                    observacion_revision=:note,revisado_por=:actor,revisado_en=CURRENT_TIMESTAMP
+                 WHERE id_evidencia=:id'
+            )->execute([
+                'total' => count($subjects), 'aprobadas' => $approved, 'promedio' => $average,
+                'plan_referencia' => $planReference, 'note' => $note !== '' ? $note : null,
+                'actor' => $adminId, 'id' => (int)$evidence['id_evidencia'],
+            ]);
+            $this->event($pdo, $requestId, 'evidencia_academica_verificada', 'en_revision', 'en_revision', $adminId,
+                $note !== '' ? $note : 'Documento y calificaciones verificados por Administración.', [
+                    'fuente' => 'documento_verificado', 'evidencia_id' => (int)$evidence['id_evidencia'],
+                    'plan' => $plan ? (int)$plan['id_plan_estudio'] : $planReference,
+                    'plan_asignado' => $plan !== null, 'materias_requeridas' => count($subjects),
+                    'materias_aprobadas' => $approved, 'promedio' => (float)$average,
+                ]);
+            (new Notificacion())->add(
+                $pdo, (int)$request['id_usuario_estudiante'], 'mg_evidencia_verificada', 'Calificaciones verificadas',
+                'Administración verificó el documento. La solicitud todavía requiere aprobación administrativa.',
+                'modalidades-grado/mi-solicitud.php?id=' . $requestId,
+                'mg-grade-evidence:' . $evidence['id_evidencia'] . ':verified'
+            );
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
             }
             throw $exception;
         }
@@ -173,21 +557,52 @@ final class MgSolicitudes
             if (!in_array($request['estado'], ['borrador', 'observada'], true)) {
                 throw new RuntimeException('Solo un borrador o una solicitud corregida puede enviarse.');
             }
-            $this->validateRequestModality($pdo, $studentId, $request);
-            $summary = $this->academicSummary($studentId);
-            $this->requireAllRequiredSubjectsPassed($summary);
+            $configuration = new MgConfiguracion();
+            if ($request['estado'] === 'observada') {
+                if (!$configuration->effectiveValue('permitir_reenviar_solicitud_observada', true)) {
+                    throw new RuntimeException('La configuración actual no permite reenviar solicitudes observadas.');
+                }
+                $resubmissions = $pdo->prepare('SELECT COUNT(*) FROM mg_solicitud_historial WHERE id_solicitud=:id AND accion="reenviada"');
+                $resubmissions->execute(['id' => $requestId]);
+                $maximum = (int) $configuration->effectiveValue('max_reenvios_solicitud', PHP_INT_MAX);
+                if ((int) $resubmissions->fetchColumn() >= $maximum) {
+                    throw new RuntimeException('La solicitud alcanzó el máximo de reenvíos permitidos.');
+                }
+            }
+            $modality = $this->validateRequestModality($pdo, $studentId, $request);
+            $decision = $this->academicVerificationForDecision($studentId, $request + $modality);
+            $evidence = $this->latestAcademicEvidence($requestId);
+            $plan = (new MgAcademico())->assignedPlan($studentId);
+            $evidenceReadyForReview = $this->academicEvidenceReadyToSubmit($studentId, $requestId, $request);
+            if ($decision === null && !$evidenceReadyForReview) {
+                throw new RuntimeException('Para enviar, completa la verificación académica oficial o adjunta el PDF de calificaciones para revisión administrativa.');
+            }
+            $summary = $decision['resumen'] ?? null;
+            $verificationSource = $decision['fuente'] ?? null;
+            $verifiedEvidenceId = $decision['evidencia_id'] ?? null;
             $update = $pdo->prepare(
                 'UPDATE mg_solicitudes SET estado = "enviada", id_plan_verificado = :plan,
                     materias_requeridas_snapshot = :requeridas, materias_aprobadas_snapshot = :aprobadas,
-                    promedio_snapshot = :promedio, verificado_en = CURRENT_TIMESTAMP, enviado_en = CURRENT_TIMESTAMP
+                    promedio_snapshot = :promedio, verificado_en = CASE WHEN :verified=1 THEN CURRENT_TIMESTAMP ELSE NULL END, enviado_en = CURRENT_TIMESTAMP,
+                    fuente_verificacion_academica=:fuente, id_evidencia_verificada=:evidencia
                  WHERE id_solicitud = :id'
             );
             $update->execute([
-                'plan' => $summary['id_plan_estudio'], 'requeridas' => $summary['materias_requeridas'],
-                'aprobadas' => $summary['materias_aprobadas'], 'promedio' => $summary['promedio_aprobadas'], 'id' => $requestId,
+                'plan' => $summary['id_plan_estudio'] ?? null,
+                'requeridas' => $summary['materias_requeridas'] ?? null,
+                'aprobadas' => $summary['materias_aprobadas'] ?? null, 'promedio' => $summary['promedio_aprobadas'] ?? null,
+                'verified' => $verificationSource !== null ? 1 : 0,
+                'fuente' => $verificationSource, 'evidencia' => $verifiedEvidenceId, 'id' => $requestId,
             ]);
             $action = $request['estado'] === 'observada' ? 'reenviada' : 'enviada';
-            $this->event($pdo, $requestId, $action, $request['estado'], 'enviada', $actorId, null, $summary);
+            $eventSummary = $summary ?? [];
+            if ($evidenceReadyForReview && $verificationSource === null) {
+                $eventSummary += [
+                    'fuente' => $evidence['estado'] === 'pendiente' ? 'documento_pendiente' : 'documento_verificado_revisar_elegibilidad',
+                    'evidencia_id' => (int)$evidence['id_evidencia'],
+                ];
+            }
+            $this->event($pdo, $requestId, $action, $request['estado'], 'enviada', $actorId, null, $eventSummary);
             (new Notificacion())->notifyAdministrators(
                 $pdo, 'mg_solicitud_enviada', 'Solicitud de Modalidad de Grado enviada',
                 'Hay una nueva solicitud #' . $requestId . ' pendiente de revisión.',
@@ -209,8 +624,16 @@ final class MgSolicitudes
         try {
             $this->lockStudent($pdo, $studentId, $actorId);
             $request = $this->lockOwnedRequest($pdo, $requestId, $studentId);
-            if (!in_array($request['estado'], ['borrador', 'observada'], true)) {
-                throw new RuntimeException('Solo se puede cancelar un borrador o una solicitud observada.');
+            $configuration = new MgConfiguracion();
+            $cancellableStates = ['borrador'];
+            if ($configuration->effectiveValue('permitir_corregir_solicitud_observada', true)) {
+                $cancellableStates[] = 'observada';
+            }
+            if ($configuration->effectiveValue('permitir_cancelar_solicitud_enviada', false)) {
+                $cancellableStates = array_merge($cancellableStates, ['enviada', 'en_revision']);
+            }
+            if (!in_array($request['estado'], $cancellableStates, true)) {
+                throw new RuntimeException('La solicitud no se puede cancelar en su estado actual.');
             }
             $update = $pdo->prepare('UPDATE mg_solicitudes SET estado = "cancelada" WHERE id_solicitud = :id');
             $update->execute(['id' => $requestId]);
@@ -253,6 +676,7 @@ final class MgSolicitudes
             'SELECT s.*, e.registro_universitario, e.id_carrera, e.id_estudiante,
                     CONCAT(u.nombre, " ", u.apellido) AS estudiante, u.estado AS estado_usuario,
                     u.correo, c.nombre_carrera, m.codigo AS codigo_modalidad, m.nombre AS modalidad,
+                    m.promedio_minimo,m.min_interesados,
                     m.permite_trabajo_grupal, m.requiere_tema_preliminar, m.requiere_descripcion,
                     CONCAT(r.nombre, " ", r.apellido) AS revisor,
                     h.id_habilitacion, h.habilitado_en, h.observacion AS observacion_habilitacion,
@@ -280,6 +704,12 @@ final class MgSolicitudes
         $request['historial'] = $this->history($requestId);
         $request['verificacion_actual'] = $this->academicSummaryOrNull((int) $request['id_estudiante']);
         $request['materias_pendientes_actuales'] = (new MgAcademico())->studentPendingSubjects((int) $request['id_estudiante']);
+        $request['plan_asignado'] = (new MgAcademico())->assignedPlan((int)$request['id_estudiante']);
+        $request['materias_plan'] = $request['plan_asignado']
+            ? (new MgAcademico())->requiredSubjectsForPlan((int)$request['plan_asignado']['id_plan_estudio'])
+            : [];
+        $request['evidencia_academica'] = $this->latestAcademicEvidence($requestId);
+        $request['academic_verification_ready'] = $this->academicVerificationForDecision((int)$request['id_estudiante'], $request) !== null;
         return $request;
     }
 
@@ -307,11 +737,17 @@ final class MgSolicitudes
                 $this->assertState($request, ['en_revision']);
                 if ($action === 'aprobar') {
                     $this->assertStudentActive($pdo, (int) $request['id_estudiante']);
-                    $summary = $this->academicSummary((int) $request['id_estudiante']);
-                    $this->requireAllRequiredSubjectsPassed($summary);
-                    $this->validateRequestModality($pdo, (int) $request['id_estudiante'], $request);
-                    $this->saveAcademicSnapshot($pdo, $requestId, $summary);
+                    $modality = $this->validateRequestModality($pdo, (int) $request['id_estudiante'], $request);
+                    $verification = $this->academicVerificationForDecision((int)$request['id_estudiante'], $request + $modality);
+                    if ($verification === null) {
+                        throw new RuntimeException('No se puede aprobar: falta historial académico completo o evidencia documental verificada y elegible.');
+                    }
+                    $this->assertMinimumInterested((int)$request['id_estudiante'], $modality);
+                    $summary = $verification['resumen'];
+                    $this->saveAcademicSnapshot($pdo, $requestId, $summary, $verification['fuente'], $verification['evidencia_id']);
                     $this->updateReview($pdo, $requestId, $reviewerId);
+                    $summary['fuente_verificacion'] = $verification['fuente'];
+                    $summary['id_evidencia'] = $verification['evidencia_id'];
                     $this->transition($pdo, $request, 'aprobada', 'aprobada', $reviewerId, $note, $summary);
                 } elseif ($action === 'observar') {
                     $this->updateReview($pdo, $requestId, $reviewerId);
@@ -355,9 +791,14 @@ final class MgSolicitudes
                 throw new RuntimeException('La solicitud ya tiene una habilitación registrada.');
             }
             $this->assertStudentActive($pdo, (int) $request['id_estudiante']);
-            $summary = $this->academicSummary((int) $request['id_estudiante']);
-            $this->requireAllRequiredSubjectsPassed($summary);
-            $this->validateRequestModality($pdo, (int) $request['id_estudiante'], $request);
+            $modality = $this->validateRequestModality($pdo, (int) $request['id_estudiante'], $request);
+            $verification = $this->academicVerificationForDecision((int)$request['id_estudiante'], $request + $modality);
+            if ($verification === null) {
+                throw new RuntimeException('No se puede habilitar: la verificación académica oficial o documental ya no cumple los requisitos.');
+            }
+            $this->assertMinimumInterested((int)$request['id_estudiante'], $modality);
+            $summary = $verification['resumen'];
+            $this->saveAcademicSnapshot($pdo, $requestId, $summary, $verification['fuente'], $verification['evidencia_id']);
             $insert = $pdo->prepare('INSERT INTO mg_habilitaciones (id_solicitud, habilitado_por, observacion) VALUES (:solicitud, :usuario, :observacion)');
             $insert->execute(['solicitud' => $requestId, 'usuario' => $adminId, 'observacion' => $note !== '' ? $note : null]);
             $this->event($pdo, $requestId, 'habilitada', 'aprobada', 'aprobada', $adminId, $note !== '' ? $note : null, $summary);
@@ -394,13 +835,125 @@ final class MgSolicitudes
         }
     }
 
-    private function requireAllRequiredSubjectsPassed(array $summary): void
+    public function academicVerificationForDecision(int $studentId, array $request): ?array
     {
+        $plan = (new MgAcademico())->assignedPlan($studentId);
+        $student = (new Estudiante())->findById($studentId);
+        if (!$student) {
+            return null;
+        }
+        $modality = [
+            'codigo' => $request['codigo_modalidad'] ?? $request['codigo'] ?? '',
+            'promedio_minimo' => $request['promedio_minimo'] ?? null,
+        ];
+        $official = $plan ? $this->academicSummaryOrNull($studentId) : null;
+        if ($official && (int)$official['id_plan_estudio'] === (int)$plan['id_plan_estudio']
+            && $this->academicSummaryMeetsPolicy($official, $modality)) {
+            return ['fuente' => 'historial_oficial', 'evidencia_id' => null, 'resumen' => $official];
+        }
+
+        $requestId = (int)($request['id_solicitud'] ?? 0);
+        $evidence = $requestId > 0 ? $this->latestAcademicEvidence($requestId) : null;
+        if (!$evidence || $evidence['estado'] !== 'verificada'
+            || (int)$evidence['id_carrera'] !== (int)$student['id_carrera']) {
+            return null;
+        }
+        $grades = $evidence['materias'] ?? [];
+        if (!$grades) {
+            return null;
+        }
+        if ($plan) {
+            if ((int)$evidence['id_plan_estudio'] === (int)$plan['id_plan_estudio']) {
+                $subjects = (new MgAcademico())->requiredSubjectsForPlan((int)$plan['id_plan_estudio']);
+                if (!$subjects || count($subjects) !== count($grades)) {
+                    return null;
+                }
+                $expected = array_map(static fn(array $subject): int => (int)$subject['id_materia'], $subjects);
+                $verified = array_map(static fn(array $grade): int => (int)$grade['id_materia'], $grades);
+                sort($expected);
+                sort($verified);
+                if ($expected !== $verified) {
+                    return null;
+                }
+            } elseif ($evidence['id_plan_estudio'] !== null
+                || mb_strtolower(trim((string)$evidence['plan_referencia']))
+                    !== mb_strtolower(trim($plan['codigo_plan'] . ' / ' . $plan['version_plan']))) {
+                return null;
+            }
+        } elseif (!$evidence['plan_referencia']) {
+            return null;
+        }
+        $approved = count(array_filter($grades, static fn(array $grade): bool => $grade['estado'] === 'APROBADA'));
+        $average = array_sum(array_map(static fn(array $grade): float => (float)$grade['nota'], $grades)) / count($grades);
+        $summary = [
+            'id_plan_estudio' => $plan ? (int)$plan['id_plan_estudio'] : null,
+            'codigo_plan' => $plan['codigo_plan'] ?? $evidence['plan_referencia'],
+            'version_plan' => $plan['version_plan'] ?? null,
+            'materias_requeridas' => count($grades),
+            'materias_aprobadas' => $approved,
+            'materias_sin_registro' => 0,
+            'materias_reprobadas' => count($grades) - $approved,
+            'promedio_aprobadas' => $average,
+        ];
+        if (!$this->academicSummaryMeetsPolicy($summary, $modality)) {
+            return null;
+        }
+        return ['fuente' => 'documento', 'evidencia_id' => (int)$evidence['id_evidencia'], 'resumen' => $summary];
+    }
+
+    public function academicEvidenceReadyToSubmit(int $studentId, int $requestId, array $request): bool
+    {
+        if ($this->academicVerificationForDecision($studentId, $request) !== null) {
+            return true;
+        }
+        $plan = (new MgAcademico())->assignedPlan($studentId);
+        $evidence = $this->latestAcademicEvidence($requestId);
+        $student = (new Estudiante())->findById($studentId);
+        return $student !== null && $evidence !== null
+            && (int)$evidence['id_carrera'] === (int)$student['id_carrera']
+            && ($plan ? (int)$evidence['id_plan_estudio'] === (int)$plan['id_plan_estudio'] : $evidence['id_plan_estudio'] === null)
+            && in_array($evidence['estado'], ['pendiente', 'verificada'], true);
+    }
+
+    private function academicSummaryMeetsPolicy(?array $summary, array $modality): bool
+    {
+        if ($summary === null) {
+            return false;
+        }
+        $required = (int)($summary['materias_requeridas'] ?? 0);
+        $passed = (int)($summary['materias_aprobadas'] ?? 0);
+        if ($required < 1 || $passed !== $required) {
+            return false;
+        }
+        if (($modality['codigo'] ?? '') === 'GRADUACION_EXCELENCIA') {
+            $average = $summary['promedio_aprobadas'] ?? null;
+            if ($average === null || (float)$average <= 90.0) {
+                return false;
+            }
+            if (($modality['promedio_minimo'] ?? null) !== null && (float)$average < (float)$modality['promedio_minimo']) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function requireAllRequiredSubjectsPassed(?array $summary): void
+    {
+        $configuration = new MgConfiguracion();
+        $verifySubjects = (bool) $configuration->effectiveValue('verificar_materias_aprobadas', true);
+        $requireCompletePlan = (bool) $configuration->effectiveValue('exigir_plan_completo', true);
+        if (!$verifySubjects && !$requireCompletePlan) {
+            return;
+        }
+        if ($summary === null) {
+            throw new RuntimeException('No se puede verificar la elegibilidad académica: falta un plan e historial aprobados.');
+        }
         $required = (int) $summary['materias_requeridas'];
         $passed = (int) $summary['materias_aprobadas'];
-        if ($required < 1 || $passed !== $required) {
-            $pending = max(0, $required - $passed);
-            throw new RuntimeException("No se puede enviar ni aprobar: materias obligatorias {$passed}/{$required}; pendientes o sin aprobar: {$pending}.");
+        $allowedPending = $requireCompletePlan ? 0 : max(0, (int) $configuration->effectiveValue('materias_pendientes_permitidas', 0));
+        $pending = max(0, $required - $passed);
+        if ($required < 1 || $pending > $allowedPending) {
+            throw new RuntimeException("No se puede enviar ni aprobar: materias obligatorias {$passed}/{$required}; pendientes o sin aprobar: {$pending}; máximo permitido: {$allowedPending}.");
         }
     }
 
@@ -422,7 +975,8 @@ final class MgSolicitudes
     private function availableModality(PDO $pdo, int $studentId, int $modalityId): array
     {
         $statement = $pdo->prepare(
-            'SELECT m.id_modalidad, m.permite_trabajo_grupal, m.max_integrantes,
+            'SELECT m.id_modalidad, m.codigo, m.min_interesados, m.promedio_minimo,
+                    m.permite_trabajo_grupal, m.max_integrantes,
                     m.requiere_tema_preliminar, m.requiere_descripcion
              FROM estudiantes e
              INNER JOIN mg_carrera_modalidades cm ON cm.id_carrera = e.id_carrera AND cm.disponible = 1
@@ -452,6 +1006,28 @@ final class MgSolicitudes
         return $modality;
     }
 
+    private function assertMinimumInterested(int $studentId, array $modality): void
+    {
+        if ($modality['codigo'] !== 'EXAMEN_GRADO' || $modality['min_interesados'] === null) {
+            return;
+        }
+        $career = Database::connection()->prepare('SELECT id_carrera FROM estudiantes WHERE id_estudiante=:id');
+        $career->execute(['id' => $studentId]);
+        $careerId = (int)$career->fetchColumn();
+        $interested = Database::connection()->prepare(
+            'SELECT COUNT(DISTINCT s.id_estudiante)
+             FROM mg_solicitudes s
+             INNER JOIN estudiantes e ON e.id_estudiante=s.id_estudiante
+             WHERE s.id_modalidad=:modalidad AND e.id_carrera=:carrera
+               AND s.estado IN ("enviada","en_revision","observada","aprobada")'
+        );
+        $interested->execute(['modalidad' => (int)$modality['id_modalidad'], 'carrera' => $careerId]);
+        $count = (int)$interested->fetchColumn();
+        if ($count < (int)$modality['min_interesados']) {
+            throw new RuntimeException('Examen de Grado requiere ' . (int)$modality['min_interesados'] . ' interesados de la carrera; actualmente hay ' . $count . '.');
+        }
+    }
+
     private function assertStudentActive(PDO $pdo, int $studentId): void
     {
         $statement = $pdo->prepare(
@@ -478,8 +1054,11 @@ final class MgSolicitudes
     private function lockAdminRequest(PDO $pdo, int $requestId): array
     {
         $statement = $pdo->prepare(
-            'SELECT s.*, e.id_estudiante, e.id_usuario AS id_usuario_estudiante FROM mg_solicitudes s
+            'SELECT s.*, e.id_estudiante, e.id_usuario AS id_usuario_estudiante,
+                    m.codigo AS codigo_modalidad,m.promedio_minimo,m.min_interesados
+             FROM mg_solicitudes s
              INNER JOIN estudiantes e ON e.id_estudiante = s.id_estudiante
+             INNER JOIN mg_modalidades m ON m.id_modalidad=s.id_modalidad
              WHERE s.id_solicitud = :id FOR UPDATE'
         );
         $statement->execute(['id' => $requestId]);
@@ -506,16 +1085,19 @@ final class MgSolicitudes
         $statement->execute(['usuario' => $reviewerId, 'id' => $requestId]);
     }
 
-    private function saveAcademicSnapshot(PDO $pdo, int $requestId, array $summary): void
+    private function saveAcademicSnapshot(PDO $pdo, int $requestId, array $summary, string $source, ?int $evidenceId): void
     {
         $statement = $pdo->prepare(
             'UPDATE mg_solicitudes SET id_plan_verificado = :plan,
                 materias_requeridas_snapshot = :requeridas, materias_aprobadas_snapshot = :aprobadas,
-                promedio_snapshot = :promedio, verificado_en = CURRENT_TIMESTAMP WHERE id_solicitud = :id'
+                promedio_snapshot = :promedio, verificado_en = CURRENT_TIMESTAMP,
+                fuente_verificacion_academica=:fuente,id_evidencia_verificada=:evidencia
+             WHERE id_solicitud = :id'
         );
         $statement->execute([
-            'plan' => $summary['id_plan_estudio'], 'requeridas' => $summary['materias_requeridas'],
-            'aprobadas' => $summary['materias_aprobadas'], 'promedio' => $summary['promedio_aprobadas'], 'id' => $requestId,
+            'plan' => $summary['id_plan_estudio'] ?? null, 'requeridas' => $summary['materias_requeridas'] ?? null,
+            'aprobadas' => $summary['materias_aprobadas'] ?? null, 'promedio' => $summary['promedio_aprobadas'] ?? null,
+            'fuente' => $source, 'evidencia' => $evidenceId, 'id' => $requestId,
         ]);
     }
 

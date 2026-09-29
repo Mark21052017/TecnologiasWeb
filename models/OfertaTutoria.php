@@ -67,16 +67,49 @@ final class OfertaTutoria
         $enrollableByOffer = $this->enrollableRowsForOffers($offerIds);
         $schedulesByOffer = $this->scheduleRowsForOffers($offerIds);
         $enrolledOfferIds = $studentId !== null ? $this->enrolledOfferIds($studentId, $offerIds) : [];
+        $enrolledTurnIds = $studentId !== null ? $this->enrolledTurnIds($studentId) : [];
 
         foreach ($offers as &$offer) {
             $offerId = (int) $offer['id_oferta'];
             $offer['inscribibles'] = $enrollableByOffer[$offerId] ?? [];
             $offer['horarios_oferta'] = $schedulesByOffer[$offerId] ?? [];
             $offer['inscrito'] = in_array($offerId, $enrolledOfferIds, true);
+            $offer['turno_ocupado'] = in_array((int) $offer['id_turno'], $enrolledTurnIds, true);
         }
         unset($offer);
 
         return $offers;
+    }
+
+    public function confirmedTutorsForOffers(array $offerIds): array
+    {
+        $offerIds = array_values(array_unique(array_filter(array_map('intval', $offerIds))));
+        if (!$offerIds) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($offerIds), '?'));
+        $statement = Database::connection()->prepare(
+            "SELECT ot.id_oferta, t.id_tutor, u.nombre, u.apellido, t.especialidad
+             FROM oferta_tutores ot
+             INNER JOIN tutores t ON t.id_tutor = ot.id_tutor
+             INNER JOIN usuarios u ON u.id_usuario = t.id_usuario AND u.estado = 'activo'
+             INNER JOIN ofertas_tutoria o ON o.id_oferta = ot.id_oferta AND o.estado = 'publicada'
+             INNER JOIN periodos_tutoria p ON p.id_periodo = o.id_periodo
+             WHERE ot.id_oferta IN ($placeholders)
+               AND ot.estado = 'confirmada'
+               AND p.estado IN ('publicado', 'cerrado')
+               AND p.fecha_fin >= CURRENT_DATE
+             ORDER BY ot.id_oferta, u.apellido, u.nombre"
+        );
+        $statement->execute($offerIds);
+
+        $tutorsByOffer = [];
+        foreach ($statement->fetchAll() as $tutor) {
+            $tutorsByOffer[(int) $tutor['id_oferta']][] = $tutor;
+        }
+
+        return $tutorsByOffer;
     }
 
     public function find(int $id): ?array
@@ -1423,6 +1456,19 @@ final class OfertaTutoria
              WHERE id_estudiante = ? AND estado = 'inscrita' AND id_oferta IN ($placeholders)"
         );
         $statement->execute(array_merge([$studentId], $offerIds));
+
+        return array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    private function enrolledTurnIds(int $studentId): array
+    {
+        $statement = Database::connection()->prepare(
+            "SELECT DISTINCT o.id_turno
+             FROM inscripciones_tutoria i
+             INNER JOIN ofertas_tutoria o ON o.id_oferta = i.id_oferta
+             WHERE i.id_estudiante = :id_estudiante AND i.estado = 'inscrita'"
+        );
+        $statement->execute(['id_estudiante' => $studentId]);
 
         return array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
     }

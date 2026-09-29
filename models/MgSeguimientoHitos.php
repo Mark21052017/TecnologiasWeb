@@ -36,18 +36,51 @@ final class MgSeguimientoHitos
             'SELECT sh.id_seguimiento, sh.estado, sh.fecha_limite, sh.fecha_entrega,
                     sh.avance_real_pct, sh.observacion_estudiante, sh.observacion_tutor,
                     h.etapa,h.tipo,th.nombre AS tipo_nombre,h.nombre,h.orden,h.avance_esperado_pct,m.requiere_informes,
+                    ri.id_informe,ri.estado AS estado_informe,ri.version_actual,
                     (sh.estado="pendiente" AND sh.fecha_limite IS NOT NULL AND sh.fecha_limite<CURRENT_DATE) AS vencido
              FROM mg_trabajo_integrantes ti
               INNER JOIN mg_inscripciones i ON i.id_inscripcion=ti.id_inscripcion AND i.estado IN ("activa","finalizada")
              INNER JOIN mg_seguimiento_hitos sh ON sh.id_trabajo=ti.id_trabajo
              INNER JOIN mg_calendario h ON h.id_hito=sh.id_hito AND h.estado="activo"
-             INNER JOIN mg_modalidades m ON m.id_modalidad=h.id_modalidad
-             LEFT JOIN mg_tipos_hito th ON th.codigo=h.tipo
+              INNER JOIN mg_modalidades m ON m.id_modalidad=h.id_modalidad
+              LEFT JOIN mg_tipos_hito th ON th.codigo=h.tipo
+              LEFT JOIN mg_informes_grado ri ON ri.id_seguimiento=sh.id_seguimiento
              WHERE ti.id_trabajo=:trabajo AND ti.id_estudiante=:estudiante AND ti.estado IN ("activo","finalizado")
              ORDER BY h.orden,h.fecha_limite,h.nombre'
         );
         $statement->execute(['trabajo' => $workId, 'estudiante' => $studentId]);
-        return $statement->fetchAll(PDO::FETCH_ASSOC);
+        $tasks = $statement->fetchAll(PDO::FETCH_ASSOC);
+        $configuration = new MgConfiguracion();
+        $maximumCorrections = (int)$configuration->effectiveValue('max_correcciones_informe', PHP_INT_MAX);
+        $allowLateWork = (bool)$configuration->effectiveValue('permitir_hitos_fuera_plazo', true);
+        $allowLateReports = (bool)$configuration->effectiveValue('permitir_entrega_informe_fuera_plazo', true);
+        if (!$configuration->effectiveValue('marcar_hitos_vencidos_automaticamente', true)) {
+            foreach ($tasks as &$task) {
+                $task['vencido'] = 0;
+            }
+            unset($task);
+        }
+        foreach ($tasks as &$task) {
+            $task['versiones'] = [];
+            if ($task['id_informe'] !== null) {
+                $versions = Database::connection()->prepare(
+                    'SELECT id_version,numero_version,nombre_archivo,estado,observacion_tutor,subido_en
+                     FROM mg_informe_versiones WHERE id_informe=:informe ORDER BY numero_version'
+                );
+                $versions->execute(['informe' => (int)$task['id_informe']]);
+                $task['versiones'] = $versions->fetchAll(PDO::FETCH_ASSOC);
+            }
+            $task['correccion_permitida'] = $task['estado_informe'] === 'observado'
+                && (int)$task['version_actual'] - 1 < $maximumCorrections;
+            $late = $task['fecha_limite'] !== null && $task['fecha_limite'] < date('Y-m-d');
+            $task['entrega_hito_permitida'] = !$late || $allowLateWork;
+            $task['entrega_informe_permitida'] = !$late || $allowLateReports;
+            if (!$configuration->effectiveValue('control_informes', true)) {
+                $task['requiere_informes'] = 0;
+            }
+        }
+        unset($task);
+        return $tasks;
     }
 
     public function deliver(int $taskId, int $studentId, int $actorId, ?string $progress, string $comment): void
@@ -68,7 +101,7 @@ final class MgSeguimientoHitos
         $pdo->beginTransaction();
         try {
             $statement = $pdo->prepare(
-                'SELECT sh.id_seguimiento,sh.id_trabajo,sh.id_hito,sh.estado,h.tipo,m.requiere_informes,
+                'SELECT sh.id_seguimiento,sh.id_trabajo,sh.id_hito,sh.estado,sh.fecha_limite,h.tipo,h.avance_esperado_pct,m.requiere_informes,
                         i.id_solicitud,u.estado AS estado_usuario
                  FROM mg_seguimiento_hitos sh
              INNER JOIN mg_trabajo_integrantes ti ON ti.id_trabajo=sh.id_trabajo AND ti.id_estudiante=:estudiante AND ti.estado IN ("activo","finalizado")
@@ -85,11 +118,23 @@ final class MgSeguimientoHitos
             if (!$task || $task['estado_usuario'] !== 'activo') {
                 throw new RuntimeException('El hito no existe para un trabajo propio activo.');
             }
-            if ($task['tipo'] === 'informe' && (int) $task['requiere_informes'] === 1) {
+            $configuration = new MgConfiguracion();
+            if ($task['tipo'] === 'informe' && (int) $task['requiere_informes'] === 1
+                && $configuration->effectiveValue('control_informes', true)) {
                 throw new RuntimeException('Este hito requiere subir un archivo PDF de informe.');
             }
             if ($task['estado'] !== 'pendiente') {
                 throw new RuntimeException('El hito ya tiene una entrega o decisión registrada.');
+            }
+            $configuration = new MgConfiguracion();
+            if ($task['fecha_limite'] !== null && $task['fecha_limite'] < date('Y-m-d')
+                && !$configuration->effectiveValue('permitir_hitos_fuera_plazo', true)) {
+                throw new RuntimeException('El plazo de este hito ya venció.');
+            }
+            if ($progressValue !== null && $task['avance_esperado_pct'] !== null
+                && !$configuration->effectiveValue('permitir_avance_superior_esperado', true)
+                && (float)$progressValue > (float)$task['avance_esperado_pct']) {
+                throw new RuntimeException('El avance no puede superar el porcentaje esperado para este hito.');
             }
             $update = $pdo->prepare(
                 'UPDATE mg_seguimiento_hitos SET estado="entregado",fecha_entrega=CURRENT_TIMESTAMP,

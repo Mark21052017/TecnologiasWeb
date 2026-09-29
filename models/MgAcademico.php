@@ -400,6 +400,38 @@ final class MgAcademico
         return $plans->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    public function assignedPlan(int $studentId): ?array
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT p.id_plan_estudio,p.id_carrera,p.codigo_plan,p.version_plan,c.nombre_carrera,
+                    COUNT(CASE WHEN pm.obligatoria=1 THEN 1 END) AS materias_requeridas
+             FROM mg_estudiante_plan ep
+             INNER JOIN estudiantes e ON e.id_estudiante=ep.id_estudiante
+             INNER JOIN mg_planes_estudio p ON p.id_plan_estudio=ep.id_plan_estudio AND p.id_carrera=e.id_carrera
+             INNER JOIN carreras c ON c.id_carrera=p.id_carrera
+             LEFT JOIN mg_plan_materias pm ON pm.id_plan_estudio=p.id_plan_estudio
+             WHERE ep.id_estudiante=:estudiante
+             GROUP BY p.id_plan_estudio,p.id_carrera,p.codigo_plan,p.version_plan,c.nombre_carrera
+             LIMIT 1'
+        );
+        $statement->execute(['estudiante' => $studentId]);
+        $plan = $statement->fetch(PDO::FETCH_ASSOC);
+        return $plan ?: null;
+    }
+
+    public function requiredSubjectsForPlan(int $planId): array
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT m.id_materia,m.nombre_materia
+             FROM mg_plan_materias pm
+             INNER JOIN materias m ON m.id_materia=pm.id_materia
+             WHERE pm.id_plan_estudio=:plan AND pm.obligatoria=1
+             ORDER BY m.nombre_materia,m.id_materia'
+        );
+        $statement->execute(['plan' => $planId]);
+        return $statement->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function studentPendingSubjects(int $studentId): array
     {
         $statement = Database::connection()->prepare(
